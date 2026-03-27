@@ -30,6 +30,9 @@ export function Dashboard() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  const logoLight = "https://raw.githubusercontent.com/alexmonarca/painel_client/refs/heads/main/logo-agenciamonarca-2026.png";
+  const logoDark = "https://raw.githubusercontent.com/alexmonarca/painel_client/main/logo-agenciamonarca-2026-bg-black.png";
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [allClients, setAllClients] = useState<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -400,8 +403,13 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
               <Menu className="w-6 h-6" />
             </button>
 
-            <div className="text-lg md:text-xl font-bold tracking-tight text-app-foreground flex items-center gap-2">
-              Agência <span className="text-[#FF6321]">Monarca</span>
+            <div className="flex items-center gap-2">
+              <img 
+                src={isDarkMode ? logoDark : logoLight} 
+                alt="Agência Monarca" 
+                className="h-8 md:h-10 w-auto object-contain"
+                referrerPolicy="no-referrer"
+              />
               {isActualAdmin && (
                 <span className="text-[10px] bg-gray-900 text-white dark:bg-white dark:text-black px-2 py-0.5 rounded-full uppercase tracking-widest ml-2 hidden xs:inline-block">Admin</span>
               )}
@@ -604,9 +612,12 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-[280px] bg-app-card border-r border-app p-6 animate-in slide-in-from-left duration-300">
             <div className="flex items-center justify-between mb-8">
-              <div className="text-xl font-bold tracking-tight text-app-foreground">
-                Agência <span className="text-[#FF6321]">Monarca</span>
-              </div>
+              <img 
+                src={isDarkMode ? logoDark : logoLight} 
+                alt="Agência Monarca" 
+                className="h-8 w-auto object-contain"
+                referrerPolicy="no-referrer"
+              />
               <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-gray-400">
                 <X className="w-6 h-6" />
               </button>

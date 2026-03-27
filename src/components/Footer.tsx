@@ -14,11 +14,14 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
           {/* About */}
           <div className="space-y-6">
-            <div className="text-xl font-bold tracking-tight">
-              Agência <span className="text-[#FF6321]">Monarca</span>
-            </div>
+            <img 
+              src="https://raw.githubusercontent.com/alexmonarca/painel_client/main/logo-agenciamonarca-2026-bg-black.png" 
+              alt="Agência Monarca" 
+              className="h-10 w-auto object-contain"
+              referrerPolicy="no-referrer"
+            />
             <p className="text-sm leading-relaxed text-gray-400 max-w-xs">
-              A Agência Monarca tem uma solução inovadora de automação para atendimento utilizando Inteligência Artificial para agilizar a comunicação entre empresas e seus clientes. Conheça o MonarChat AI.
+              A Agência Monarca tem uma solução inovadora de automação para atendimento utilizando Inteligência Artificial para agilizar a comunicação entre empresas e seus clientes. Conheça o IARA Monarca.
             </p>
           </div>
 
@@ -26,17 +29,30 @@ export function Footer() {
           <div>
             <h4 className="font-bold text-lg mb-8 tracking-tight">Configurações</h4>
             <ul className="space-y-4">
-              {[
-                'Painel do Cliente',
-                'Cérebro da IA',
-                'Chat de Conversas',
-                'Sua conta'
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] cursor-pointer transition-colors group">
+              <li>
+                <a href="https://painel.monarcahub.com/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] transition-colors group">
                   <Plus className="w-3 h-3 text-[#FF6321] group-hover:rotate-90 transition-transform" />
-                  {item}
-                </li>
-              ))}
+                  Painel do Cliente
+                </a>
+              </li>
+              <li>
+                <a href="https://app.monarcahub.com/treinar-ia" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] transition-colors group">
+                  <Plus className="w-3 h-3 text-[#FF6321] group-hover:rotate-90 transition-transform" />
+                  Cérebro da IA
+                </a>
+              </li>
+              <li>
+                <a href="https://chat.monarcahub.com/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] transition-colors group">
+                  <Plus className="w-3 h-3 text-[#FF6321] group-hover:rotate-90 transition-transform" />
+                  Chat de Conversas
+                </a>
+              </li>
+              <li>
+                <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] transition-colors group">
+                  <Plus className="w-3 h-3 text-[#FF6321] group-hover:rotate-90 transition-transform" />
+                  Sua conta
+                </button>
+              </li>
             </ul>
           </div>
 
@@ -44,17 +60,30 @@ export function Footer() {
           <div>
             <h4 className="font-bold text-lg mb-8 tracking-tight">Links</h4>
             <ul className="space-y-4">
-              {[
-                'App MonarChatAI',
-                'Contato',
-                'Termos de Uso',
-                'LGPD'
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] cursor-pointer transition-colors group">
+              <li>
+                <a href="https://app.monarcahub.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] transition-colors group">
                   <Plus className="w-3 h-3 text-[#FF6321] group-hover:rotate-90 transition-transform" />
-                  {item}
-                </li>
-              ))}
+                  App IARA
+                </a>
+              </li>
+              <li>
+                <a href="mailto:alex@monarcahub.com" className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] transition-colors group">
+                  <Plus className="w-3 h-3 text-[#FF6321] group-hover:rotate-90 transition-transform" />
+                  Contato
+                </a>
+              </li>
+              <li>
+                <a href="https://agencia.monarcahub.com/politica-de-privacidade/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] transition-colors group">
+                  <Plus className="w-3 h-3 text-[#FF6321] group-hover:rotate-90 transition-transform" />
+                  Termos de Uso
+                </a>
+              </li>
+              <li>
+                <a href="https://agencia.monarcahub.com/politica-de-privacidade/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-gray-400 hover:text-[#FF6321] transition-colors group">
+                  <Plus className="w-3 h-3 text-[#FF6321] group-hover:rotate-90 transition-transform" />
+                  LGPD
+                </a>
+              </li>
             </ul>
           </div>
 
@@ -63,13 +92,13 @@ export function Footer() {
             <h4 className="font-bold text-lg mb-8 tracking-tight">Social media</h4>
             <p className="text-sm text-gray-400 mb-8">Fique por dentro de tudo acompanhando nossas redes</p>
             <div className="flex gap-4">
-              <a href="#" className="w-12 h-12 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-[#FF6321] hover:border-[#FF6321] transition-all group">
+              <a href="https://www.instagram.com/agenciamonarca" target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-[#FF6321] hover:border-[#FF6321] transition-all group">
                 <Instagram className="w-5 h-5 text-gray-400 group-hover:text-white" />
               </a>
-              <a href="#" className="w-12 h-12 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-[#FF6321] hover:border-[#FF6321] transition-all group">
+              <a href="https://www.facebook.com/agenciamonarca" target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-[#FF6321] hover:border-[#FF6321] transition-all group">
                 <Facebook className="w-5 h-5 text-gray-400 group-hover:text-white" />
               </a>
-              <a href="#" className="w-12 h-12 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-[#FF6321] hover:border-[#FF6321] transition-all group">
+              <a href="https://youtube.com/@agenciamonarca" target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-[#FF6321] hover:border-[#FF6321] transition-all group">
                 <Youtube className="w-5 h-5 text-gray-400 group-hover:text-white" />
               </a>
             </div>
