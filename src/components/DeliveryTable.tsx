@@ -1,0 +1,104 @@
+import React from 'react';
+import { format, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { Edit2, CheckCircle2, Clock, AlertCircle, XCircle, CheckCircle } from 'lucide-react';
+import { Delivery, DeliveryStatus } from '../types';
+import { cn } from '../lib/utils';
+
+interface DeliveryTableProps {
+  deliveries: Delivery[];
+  onApprove: (id: string) => void;
+  isAdmin?: boolean;
+  onEdit?: (delivery: Delivery) => void;
+}
+
+const statusConfig: Record<DeliveryStatus, { label: string; color: string; icon: any }> = {
+  entregue: { label: 'Entregue', color: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/30', icon: Clock },
+  aprovado: { label: 'Aprovado', color: 'bg-green-50 text-green-600 border-green-100 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/30', icon: CheckCircle2 },
+  finalizado: { label: 'Finalizado', color: 'bg-gray-50 text-gray-600 border-gray-100 dark:bg-white/5 dark:text-gray-400 dark:border-white/10', icon: CheckCircle },
+  recusado: { label: 'Recusado', color: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/30', icon: XCircle },
+  'ñ fez - atrasado': { label: 'Atrasado', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/30', icon: AlertCircle },
+};
+
+export function DeliveryTable({ deliveries, onApprove, isAdmin, onEdit }: DeliveryTableProps) {
+  return (
+    <div className="bg-app-card rounded-3xl border border-app shadow-sm overflow-hidden transition-colors">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-app">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-400 w-32">Dia</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-400">Ideia / Descrição</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-400 w-48">Status</th>
+              {isAdmin && <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-400 w-20 text-center">Ações</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-app">
+            {deliveries.length === 0 ? (
+              <tr>
+                <td colSpan={isAdmin ? 4 : 3} className="px-6 py-12 text-center text-gray-400 italic">
+                  Nenhuma entrega registrada para este período.
+                </td>
+              </tr>
+            ) : (
+              deliveries.map((delivery) => {
+                const config = statusConfig[delivery.status];
+                const StatusIcon = config.icon;
+
+                return (
+                  <tr key={delivery.id} className="group hover:bg-gray-50/50 dark:hover:bg-white/5 transition-colors">
+                    <td className="px-6 py-5 align-top">
+                      <div className="flex flex-col">
+                        <span className="text-lg font-bold text-app-foreground">
+                          {format(parseISO(delivery.delivery_date), 'dd')}
+                        </span>
+                        <span className="text-xs text-gray-400 capitalize">
+                          {format(parseISO(delivery.delivery_date), 'MMM', { locale: ptBR })}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5 align-top">
+                      <p className="text-app-foreground leading-relaxed whitespace-pre-wrap opacity-90">
+                        {delivery.description}
+                      </p>
+                    </td>
+                    <td className="px-6 py-5 align-top">
+                      <div className="flex flex-col gap-2">
+                        <div className={cn(
+                          "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border",
+                          config.color
+                        )}>
+                          <StatusIcon className="w-3.5 h-3.5" />
+                          {config.label}
+                        </div>
+                        
+                        {delivery.status === 'entregue' && !isAdmin && (
+                          <button
+                            onClick={() => onApprove(delivery.id)}
+                            className="text-[10px] font-bold uppercase tracking-wider text-[#FF6321] hover:underline text-left ml-1"
+                          >
+                            Clique para Aprovar
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    {isAdmin && (
+                      <td className="px-6 py-5 align-top text-center">
+                        <button
+                          onClick={() => onEdit?.(delivery)}
+                          className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl text-gray-400 hover:text-[#FF6321] transition-all"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
