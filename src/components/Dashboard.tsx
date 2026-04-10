@@ -221,6 +221,49 @@ export function Dashboard() {
     }
   };
 
+  const handleReorder = async (activeId: string, overId: string) => {
+    const activeDelivery = deliveries.find(d => d.id === activeId);
+    const overDelivery = deliveries.find(d => d.id === overId);
+
+    if (!activeDelivery || !overDelivery) return;
+
+    // Swap dates
+    const activeDate = activeDelivery.delivery_date;
+    const overDate = overDelivery.delivery_date;
+
+    try {
+      // Optimistic update
+      setDeliveries(prev => {
+        const newDeliveries = [...prev];
+        const activeIndex = newDeliveries.findIndex(d => d.id === activeId);
+        const overIndex = newDeliveries.findIndex(d => d.id === overId);
+        
+        newDeliveries[activeIndex] = { ...activeDelivery, delivery_date: overDate };
+        newDeliveries[overIndex] = { ...overDelivery, delivery_date: activeDate };
+        
+        return newDeliveries.sort((a, b) => new Date(a.delivery_date).getTime() - new Date(b.delivery_date).getTime());
+      });
+
+      // Update in Supabase
+      const { error: error1 } = await supabase
+        .from('deliveries')
+        .update({ delivery_date: overDate })
+        .eq('id', activeId);
+
+      const { error: error2 } = await supabase
+        .from('deliveries')
+        .update({ delivery_date: activeDate })
+        .eq('id', overId);
+
+      if (error1 || error2) throw error1 || error2;
+
+    } catch (err) {
+      console.error('Error reordering deliveries:', err);
+      fetchData(); // Revert on error
+      alert('Erro ao reordenar entregas. Tente novamente.');
+    }
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/'; // Força o redirecionamento para limpar o estado
@@ -549,6 +592,7 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
                 onApprove={handleApprove} 
                 isAdmin={isActualAdmin}
                 onEdit={(d) => setIsEditing(d)}
+                onReorder={handleReorder}
               />
 
               {/* Feedback Section */}
