@@ -63,6 +63,16 @@ export function Dashboard() {
     }
   }, [isEditing, isAdding]);
 
+  const [isAddingClient, setIsAddingClient] = useState(false);
+  const [clientFormData, setClientFormData] = useState({
+    email: '',
+    password: '',
+    company_name: '',
+    total_deliveries_contracted: 10,
+    monthly_value: 0,
+    due_day: 10
+  });
+
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -72,6 +82,52 @@ export function Dashboard() {
   }, [isDarkMode]);
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
+
+  const handleCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      // 1. Create user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: clientFormData.email,
+        password: clientFormData.password,
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Erro ao criar usuário no Auth');
+
+      // 2. Create client profile in 'clients' table
+      const { error: clientError } = await supabase
+        .from('clients')
+        .insert([{
+          id: authData.user.id,
+          company_name: clientFormData.company_name,
+          total_deliveries_contracted: clientFormData.total_deliveries_contracted,
+          monthly_value: clientFormData.monthly_value,
+          due_day: clientFormData.due_day,
+          role: 'user'
+        }]);
+
+      if (clientError) throw clientError;
+
+      alert('Cliente criado com sucesso!');
+      setIsAddingClient(false);
+      setClientFormData({
+        email: '',
+        password: '',
+        company_name: '',
+        total_deliveries_contracted: 10,
+        monthly_value: 0,
+        due_day: 10
+      });
+      fetchData();
+    } catch (err: any) {
+      console.error('Error creating client:', err);
+      alert('Erro ao criar cliente: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSaveDelivery = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -541,13 +597,22 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
               </div>
 
               {isActualAdmin && (
-                <button 
-                  onClick={() => setIsAdding(true)}
-                  className="bg-gray-900 dark:bg-[#FF6321] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-[#e5591e] transition-all shadow-lg shadow-gray-900/10"
-                >
-                  <Plus className="w-5 h-5" />
-                  Nova Entrega
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setIsAddingClient(true)}
+                    className="bg-white dark:bg-white/10 text-gray-900 dark:text-white px-4 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-white/20 transition-all border border-app shadow-sm"
+                  >
+                    <Plus className="w-5 h-5 text-[#FF6321]" />
+                    Novo Cliente
+                  </button>
+                  <button 
+                    onClick={() => setIsAdding(true)}
+                    className="bg-gray-900 dark:bg-[#FF6321] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-[#e5591e] transition-all shadow-lg shadow-gray-900/10"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Nova Entrega
+                  </button>
+                </div>
               )}
             </div>
 
@@ -735,6 +800,114 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
           <span className="text-[10px] font-bold uppercase tracking-wider">Minha Conta</span>
         </button>
       </div>
+
+      {/* Modal Novo Cliente */}
+      {isAddingClient && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-app-card w-full max-w-lg rounded-[32px] p-8 shadow-2xl border border-app relative animate-in zoom-in-95 duration-300">
+            <button 
+              onClick={() => setIsAddingClient(false)}
+              className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-12 h-12 rounded-2xl bg-[#FF6321]/10 flex items-center justify-center">
+                <Plus className="w-6 h-6 text-[#FF6321]" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-app-foreground">Novo Cliente</h3>
+                <p className="text-sm text-gray-400">Cadastre um novo cliente no painel.</p>
+              </div>
+            </div>
+            
+            <form onSubmit={handleCreateClient} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Nome da Empresa</label>
+                  <input 
+                    type="text"
+                    required
+                    value={clientFormData.company_name}
+                    onChange={(e) => setClientFormData(prev => ({ ...prev, company_name: e.target.value }))}
+                    placeholder="Ex: Monarca Hub"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">E-mail de Acesso</label>
+                  <input 
+                    type="email"
+                    required
+                    value={clientFormData.email}
+                    onChange={(e) => setClientFormData(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="cliente@email.com"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Senha Provisória</label>
+                <input 
+                  type="password"
+                  required
+                  value={clientFormData.password}
+                  onChange={(e) => setClientFormData(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Entregas/Mês</label>
+                  <input 
+                    type="number"
+                    required
+                    value={clientFormData.total_deliveries_contracted}
+                    onChange={(e) => setClientFormData(prev => ({ ...prev, total_deliveries_contracted: parseInt(e.target.value) }))}
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Valor Mensal</label>
+                  <input 
+                    type="number"
+                    required
+                    value={clientFormData.monthly_value}
+                    onChange={(e) => setClientFormData(prev => ({ ...prev, monthly_value: parseFloat(e.target.value) }))}
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Dia Vencimento</label>
+                  <input 
+                    type="number"
+                    required
+                    min="1"
+                    max="31"
+                    value={clientFormData.due_day}
+                    onChange={(e) => setClientFormData(prev => ({ ...prev, due_day: parseInt(e.target.value) }))}
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <button 
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-4 bg-[#FF6321] text-white font-bold rounded-2xl hover:bg-[#e5591e] shadow-lg shadow-[#FF6321]/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Cadastrar Cliente'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Admin Edit Modal */}
       {(isEditing || isAdding) && (
