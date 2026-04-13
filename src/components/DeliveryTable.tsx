@@ -118,6 +118,17 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
               Clique para Aprovar
             </button>
           )}
+
+          {delivery.status === 'finalizado' && delivery.delivery_link && (
+            <a
+              href={delivery.delivery_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-bold uppercase tracking-wider text-[#FF6321] hover:underline text-left ml-1"
+            >
+              Acessar
+            </a>
+          )}
         </div>
       </td>
       {isAdmin && (

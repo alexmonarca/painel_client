@@ -22,6 +22,7 @@ export interface Delivery {
   delivery_date: string;
   description: string;
   status: DeliveryStatus;
+  delivery_link?: string;
   created_at: string;
 }
 

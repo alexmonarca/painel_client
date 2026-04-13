@@ -44,7 +44,8 @@ export function Dashboard() {
   const [formData, setFormData] = useState({
     description: '',
     status: 'entregue' as DeliveryStatus,
-    delivery_date: format(new Date(), 'yyyy-MM-dd')
+    delivery_date: format(new Date(), 'yyyy-MM-dd'),
+    delivery_link: ''
   });
 
   useEffect(() => {
@@ -52,13 +53,15 @@ export function Dashboard() {
       setFormData({
         description: isEditing.description,
         status: isEditing.status,
-        delivery_date: isEditing.delivery_date
+        delivery_date: isEditing.delivery_date,
+        delivery_link: isEditing.delivery_link || ''
       });
     } else {
       setFormData({
         description: '',
         status: 'entregue',
-        delivery_date: format(new Date(), 'yyyy-MM-dd')
+        delivery_date: format(new Date(), 'yyyy-MM-dd'),
+        delivery_link: ''
       });
     }
   }, [isEditing, isAdding]);
@@ -970,6 +973,19 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
                   <option value="ñ fez - atrasado">Atrasado</option>
                 </select>
               </div>
+
+              {formData.status === 'finalizado' && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Link da Entrega / Postagem</label>
+                  <input 
+                    type="url"
+                    value={formData.delivery_link}
+                    onChange={(e) => setFormData(prev => ({ ...prev, delivery_link: e.target.value }))}
+                    placeholder="https://..."
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                  />
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4">
                 {isEditing && (
