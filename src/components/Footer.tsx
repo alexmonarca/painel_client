@@ -15,7 +15,7 @@ export function Footer() {
           {/* About */}
           <div className="space-y-6">
             <img 
-              src="https://raw.githubusercontent.com/alexmonarca/painel_client/main/logo-agenciamonarca-2026-bg-black.png" 
+              src="https://i.ibb.co/DP8ZWgBT/logo-agenciamonarca-2026-bg-black.png" 
               alt="Agência Monarca" 
               className="h-10 w-auto object-contain"
               referrerPolicy="no-referrer"

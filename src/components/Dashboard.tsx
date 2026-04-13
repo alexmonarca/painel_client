@@ -30,8 +30,8 @@ export function Dashboard() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const logoLight = "https://raw.githubusercontent.com/alexmonarca/painel_client/refs/heads/main/logo-agenciamonarca-2026.png";
-  const logoDark = "https://raw.githubusercontent.com/alexmonarca/painel_client/main/logo-agenciamonarca-2026-bg-black.png";
+  const logoLight = "https://i.ibb.co/20yqdzqd/logo-agenciamonarca-2026.png";
+  const logoDark = "https://i.ibb.co/DP8ZWgBT/logo-agenciamonarca-2026-bg-black.png";
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [allClients, setAllClients] = useState<Client[]>([]);

@@ -32,10 +32,13 @@ export function Login() {
     <div className="min-h-screen flex items-center justify-center bg-[#f5f5f5] p-4">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-sm p-8 border border-gray-100">
         <div className="flex flex-col items-center mb-8">
-          <div className="text-2xl font-bold tracking-tight text-gray-900 mb-2">
-            Agência <span className="text-[#FF6321]">Monarca</span>
-          </div>
-          <p className="text-sm text-gray-500">Portal do Cliente</p>
+          <img 
+            src="https://i.ibb.co/20yqdzqd/logo-agenciamonarca-2026.png" 
+            alt="Agência Monarca" 
+            className="h-24 w-auto object-contain mb-4"
+            referrerPolicy="no-referrer"
+          />
+          <p className="text-sm text-gray-500 font-medium">Portal do Cliente</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
