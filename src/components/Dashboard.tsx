@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Client, Delivery, DeliveryStatus, Invoice, UserRole, ProductionStatus } from '../types';
 import { Metrics } from './Metrics';
 import { DeliveryTable } from './DeliveryTable';
-import { LogOut, Calendar, FileText, ChevronLeft, ChevronRight, Loader2, LayoutDashboard, CreditCard, Plus, Edit2, Trash2, X, Moon, Sun, MessageSquare, Sparkles, AlertCircle, Menu, ClipboardList, Send, UserCheck } from 'lucide-react';
+import { LogOut, Calendar, FileText, ChevronLeft, ChevronRight, Loader2, LayoutDashboard, CreditCard, Plus, Edit2, Trash2, X, Moon, Sun, MessageSquare, Sparkles, AlertCircle, Menu, ClipboardList, Send, UserCheck, Download, Printer } from 'lucide-react';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Account } from './Account';
@@ -12,6 +12,8 @@ import { ChatAgent } from './ChatAgent';
 import { Footer } from './Footer';
 import { cn } from '../lib/utils';
 import { Workflow } from './Workflow';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 export function Dashboard() {
   const [client, setClient] = useState<Client | null>(null);
@@ -102,6 +104,55 @@ export function Dashboard() {
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportPDF = async () => {
+    if (!calendarRef.current) return;
+    setExporting(true);
+    
+    try {
+      // Small delay to ensure any layout shifts settle if needed
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const canvas = await html2canvas(calendarRef.current, {
+        scale: 2, // Better quality
+        useCORS: true,
+        backgroundColor: isDarkMode ? '#0a0a0a' : '#f5f5f5',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'px',
+        format: [canvas.width, canvas.height + 60] // Extra space for header
+      });
+
+      // Add Export Header
+      pdf.setFillColor(isDarkMode ? 10 : 245, isDarkMode ? 10 : 245, isDarkMode ? 10 : 245);
+      pdf.rect(0, 0, canvas.width, 60, 'F');
+      
+      pdf.setTextColor(isDarkMode ? 255 : 0, isDarkMode ? 255 : 0, isDarkMode ? 255 : 0);
+      pdf.setFontSize(16);
+      pdf.text(`Relatório de Calendário Editorial - ${client?.company_name}`, 20, 25);
+      
+      pdf.setFontSize(10);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Exportado em: ${format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}`, 20, 45);
+
+      pdf.addImage(imgData, 'PNG', 0, 60, canvas.width, canvas.height);
+      
+      const fileName = `Calendario_${client?.company_name || 'Agencia'}_${format(currentMonth, 'MMMM_yyyy', { locale: ptBR })}.pdf`;
+      pdf.save(fileName);
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+      alert('Erro ao gerar relatório PDF.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -153,17 +204,26 @@ export function Dashboard() {
     e.preventDefault();
     if (!client) return;
 
+    // Clean up empty strings for database compatibility (UUID and Dates must be null if empty)
+    const dataToSave = {
+      ...formData,
+      assigned_to: formData.assigned_to || null,
+      deadline: formData.deadline || null,
+      briefing: formData.briefing || null,
+      delivery_link: formData.delivery_link || null
+    };
+
     try {
       if (isEditing) {
         const { error } = await supabase
           .from('deliveries')
-          .update(formData)
+          .update(dataToSave)
           .eq('id', isEditing.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('deliveries')
-          .insert([{ ...formData, client_id: client.id }]);
+          .insert([{ ...dataToSave, client_id: client.id }]);
         if (error) throw error;
       }
 
@@ -199,17 +259,70 @@ export function Dashboard() {
       setCurrentUserId(user.id);
 
       // 1. Fetch the logged-in user's profile to check role
+      console.log('Fetching profile for UID:', user.id);
       const { data: currentUserProfile, error: profileError } = await supabase
         .from('clients')
         .select('*')
         .eq('id', user.id)
         .single();
-
+      
       if (profileError && profileError.code !== 'PGRST116') {
-        console.error('Erro ao buscar perfil do usuário logado:', profileError);
+        console.error('Error fetching current user profile:', profileError);
+      } else {
+        console.log('Profile found:', currentUserProfile);
       }
 
       setCurrentUser(currentUserProfile);
+
+      // AUTO-UPGRADE: Ensure master admins always have the right role
+      if (currentUserProfile && currentUserProfile.role !== 'admin') {
+        const adminEmails = ['AlexxBelmonte@gmail.com', 'noreply@monarcahub.com'];
+        if (adminEmails.includes(user.email || '')) {
+          await supabase.from('clients').update({ role: 'admin' }).eq('id', user.id);
+          currentUserProfile.role = 'admin';
+        }
+      }
+      
+      // AUTO-PROVISIONING: If user exists in Auth but not in Clients
+      if (!currentUserProfile && user.id) {
+        console.log('User not found in clients table, attempting auto-provisioning...');
+        
+        // Try fallback to 'profiles' table if it exists
+        const { data: profileFallback } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        const companyName = profileFallback?.company_name || profileFallback?.full_name || user.email?.split('@')[0] || 'Novo Cliente';
+        const adminEmails = ['AlexxBelmonte@gmail.com', 'noreply@monarcahub.com'];
+        const isAdmin = adminEmails.includes(user.email || '') || profileFallback?.role === 'admin';
+
+        const { data: newProfile, error: provisionError } = await supabase
+          .from('clients')
+          .insert([{
+            id: user.id,
+            company_name: companyName,
+            total_deliveries_contracted: 99,
+            monthly_value: 0,
+            due_day: 10,
+            role: isAdmin ? 'admin' : 'user'
+          }])
+          .select()
+          .single();
+
+        if (!provisionError && newProfile) {
+          console.log('Auto-provisioned user in clients table');
+          setCurrentUser(newProfile);
+          setClient(newProfile);
+          // Re-trigger fetch to get all data now that we have a client record
+          fetchData(); 
+          return;
+        } else {
+          console.error('Failed to auto-provision user:', provisionError);
+        }
+      }
+
       const isAdminUser = currentUserProfile?.role === 'admin';
 
       // 2. If admin, fetch all clients and staff for the selector
@@ -349,8 +462,15 @@ export function Dashboard() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/'; // Força o redirecionamento para limpar o estado
+    try {
+      await supabase.auth.signOut();
+      localStorage.clear(); // Clear any cached state
+      window.location.reload(); // Hard reload to clear React state
+    } catch (err) {
+      console.error('Error logging out:', err);
+      // Force reload anyway
+      window.location.href = '/'; 
+    }
   };
 
   if (loading && !client) {
@@ -399,68 +519,28 @@ export function Dashboard() {
             </div>
           )}
 
-          <div className="bg-gray-50 p-6 rounded-2xl space-y-4 text-sm">
+          <div className="bg-gray-50 p-6 rounded-2xl space-y-4 text-sm relative z-[60]">
             <p className="font-semibold text-gray-700">Comando de Reinstalação (SQL):</p>
             <p className="text-xs text-gray-500">
-              Se você já tem uma tabela <code className="bg-gray-200 px-1 rounded">profiles</code>, o sistema pode estar conflitando. Rode este comando para garantir a estrutura da <code className="bg-gray-200 px-1 rounded">clients</code>:
+              Seu perfil não foi encontrado automaticamente. Por favor, execute o comando abaixo no Editor SQL do seu Supabase para garantir que seu usuário tenha acesso administrativo:
             </p>
             <pre className="bg-white p-3 rounded-lg text-[10px] border border-gray-200 overflow-x-auto text-gray-700 font-mono">
-              {`-- 1. Garante o schema public
-SET search_path TO public;
-
--- 2. Tabela de Clientes
-CREATE TABLE IF NOT EXISTS public.clients (
-  id UUID PRIMARY KEY,
-  company_name TEXT NOT NULL,
-  budget_details JSONB DEFAULT '{}'::jsonb,
-  total_deliveries_contracted INTEGER DEFAULT 0,
-  monthly_value DECIMAL(10,2) DEFAULT 0,
-  payment_link TEXT,
-  due_day INTEGER DEFAULT 10,
-  role TEXT DEFAULT 'user',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
-);
-
--- 3. Tabela de Entregas (Calendário)
-CREATE TABLE IF NOT EXISTS public.deliveries (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
-  description TEXT NOT NULL,
-  status TEXT DEFAULT 'entregue',
-  delivery_date DATE NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
-);
-
--- 4. Tabela de Histórico de Chat
-CREATE TABLE IF NOT EXISTS public.chat_messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
-  role TEXT NOT NULL, -- 'user' ou 'model'
-  content TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
-);
-
--- 5. Desativa RLS para teste (Opcional)
-ALTER TABLE public.clients DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.deliveries DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
-
--- 6. Insere o seu usuário (SUBSTITUA PELO SEU ID ABAIXO)
--- INSERT INTO public.clients (id, company_name, total_deliveries_contracted, role) 
--- VALUES ('${currentUserId}', 'Nome da Empresa', 10, 'admin')
--- ON CONFLICT (id) DO NOTHING;`}
+              {`-- 1. Garante que seu usuário seja Admin Master
+INSERT INTO public.clients (id, company_name, total_deliveries_contracted, role) 
+VALUES ('${currentUserId}', 'Admin Monarca', 99, 'admin')
+ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
             </pre>
           </div>
-          <div className="flex flex-col gap-2 mt-8">
+          <div className="flex flex-col gap-2 mt-8 relative z-[60]">
             <button 
-              onClick={() => window.location.reload()}
+              onClick={() => fetchData()}
               className="w-full py-4 bg-[#FF6321] text-white font-bold rounded-2xl hover:bg-[#e5591e] shadow-lg shadow-[#FF6321]/20 transition-all active:scale-[0.98]"
             >
-              Já configurei, atualizar página
+              Tentar Novamente
             </button>
             <button 
               onClick={handleLogout}
-              className="w-full py-3 text-gray-500 text-sm font-bold hover:text-gray-900 transition-all"
+              className="w-full py-3 text-gray-400 text-sm font-bold hover:text-red-500 transition-all"
             >
               Sair e trocar de conta
             </button>
@@ -626,7 +706,8 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
           <Workflow currentUserId={currentUserId} userRole={currentUser?.role || 'user'} />
         ) : activeTab === 'calendar' ? (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-            {/* Welcome Section */}
+            <div ref={calendarRef} className={cn("space-y-8 pb-4", exporting && "p-8 rounded-3xl")}>
+              {/* Welcome Section */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
               <div>
                 <h1 className="text-3xl font-extrabold text-app-foreground mb-2">
@@ -702,8 +783,29 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
                 onEdit={(d) => setIsEditing(d)}
                 onReorder={handleReorder}
               />
+            </div>
+          </div>
 
-              {/* Feedback Section */}
+          {isActualAdmin && (
+              <button 
+                onClick={handleExportPDF}
+                disabled={exporting}
+                className="w-full py-5 bg-white dark:bg-white/5 border-2 border-app hover:border-[#FF6321] text-gray-600 dark:text-gray-300 hover:text-[#FF6321] font-black rounded-[32px] transition-all flex items-center justify-center gap-3 group shadow-sm active:scale-[0.98] disabled:opacity-50"
+              >
+                {exporting ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  <>
+                    <Download className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
+                    <span className="uppercase tracking-widest text-xs">Gerar Relatório em PDF</span>
+                    <div className="h-4 w-[1px] bg-gray-200 dark:bg-white/10 mx-2" />
+                    <Printer className="w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Feedback Section */}
               {deliveries.length > 0 && (
                 <div className="bg-app-card p-8 rounded-3xl border border-app shadow-sm transition-colors">
                   <div className="flex items-center gap-4 mb-4">
@@ -725,7 +827,6 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
                 </div>
               )}
             </div>
-          </div>
         ) : (
           <Account 
             client={client} 
@@ -738,14 +839,16 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
       </main>
 
       {/* Floating Chat Button */}
-      <button 
-        onClick={() => setIsChatOpen(true)}
-        className="fixed bottom-24 md:bottom-6 right-6 px-6 h-16 bg-[#FF6321] text-white rounded-full shadow-2xl shadow-[#FF6321]/40 flex items-center justify-center gap-3 hover:scale-105 active:scale-95 transition-all z-40 group"
-      >
-        <MessageSquare className="w-7 h-7 group-hover:rotate-12 transition-transform" />
-        <span className="font-bold text-sm tracking-wide">Suporte 24h</span>
-        <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-[#0a0a0a] rounded-full" />
-      </button>
+      {activeTab !== 'workflow' && (
+        <button 
+          onClick={() => setIsChatOpen(true)}
+          className="fixed bottom-24 md:bottom-6 right-6 px-6 h-16 bg-[#FF6321] text-white rounded-full shadow-2xl shadow-[#FF6321]/40 flex items-center justify-center gap-3 hover:scale-105 active:scale-95 transition-all z-40 group"
+        >
+          <MessageSquare className="w-7 h-7 group-hover:rotate-12 transition-transform" />
+          <span className="font-bold text-sm tracking-wide">Suporte 24h</span>
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-[#0a0a0a] rounded-full" />
+        </button>
+      )}
 
       {/* AI Chat Agent */}
       {client && (
