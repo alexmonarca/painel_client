@@ -1,5 +1,6 @@
 export type DeliveryStatus = 'entregue' | 'aprovado' | 'finalizado' | 'recusado' | 'ñ fez - atrasado';
-export type UserRole = 'user' | 'admin';
+export type UserRole = 'user' | 'admin' | 'designer';
+export type ProductionStatus = 'ideacao' | 'producao' | 'revisao' | 'finalizado';
 
 export interface Client {
   id: string;
@@ -23,7 +24,12 @@ export interface Delivery {
   description: string;
   status: DeliveryStatus;
   delivery_link?: string;
+  production_status?: ProductionStatus;
+  assigned_to?: string; // UUID of the designer
+  briefing?: string;
+  deadline?: string;
   created_at: string;
+  client?: Client; // Populated for designer view
 }
 
 export interface Invoice {

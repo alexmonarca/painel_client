@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Client, Delivery, DeliveryStatus, Invoice } from '../types';
+import { Client, Delivery, DeliveryStatus, Invoice, UserRole, ProductionStatus } from '../types';
 import { Metrics } from './Metrics';
 import { DeliveryTable } from './DeliveryTable';
-import { LogOut, Calendar, FileText, ChevronLeft, ChevronRight, Loader2, LayoutDashboard, CreditCard, Plus, Edit2, Trash2, X, Moon, Sun, MessageSquare, Sparkles, AlertCircle, Menu } from 'lucide-react';
+import { LogOut, Calendar, FileText, ChevronLeft, ChevronRight, Loader2, LayoutDashboard, CreditCard, Plus, Edit2, Trash2, X, Moon, Sun, MessageSquare, Sparkles, AlertCircle, Menu, ClipboardList, Send, UserCheck } from 'lucide-react';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Account } from './Account';
@@ -11,16 +11,19 @@ import { ReviewBlock } from './ReviewBlock';
 import { ChatAgent } from './ChatAgent';
 import { Footer } from './Footer';
 import { cn } from '../lib/utils';
+import { Workflow } from './Workflow';
 
 export function Dashboard() {
   const [client, setClient] = useState<Client | null>(null);
   const [currentUser, setCurrentUser] = useState<Client | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [designers, setDesigners] = useState<Client[]>([]);
+
   const [isOverdue, setIsOverdue] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<'calendar' | 'account'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'account' | 'workflow'>('calendar');
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark');
@@ -45,7 +48,11 @@ export function Dashboard() {
     description: '',
     status: 'entregue' as DeliveryStatus,
     delivery_date: format(new Date(), 'yyyy-MM-dd'),
-    delivery_link: ''
+    delivery_link: '',
+    production_status: 'ideacao' as ProductionStatus,
+    assigned_to: '',
+    briefing: '',
+    deadline: ''
   });
 
   useEffect(() => {
@@ -54,14 +61,22 @@ export function Dashboard() {
         description: isEditing.description,
         status: isEditing.status,
         delivery_date: isEditing.delivery_date,
-        delivery_link: isEditing.delivery_link || ''
+        delivery_link: isEditing.delivery_link || '',
+        production_status: isEditing.production_status || 'ideacao',
+        assigned_to: isEditing.assigned_to || '',
+        briefing: isEditing.briefing || '',
+        deadline: isEditing.deadline || ''
       });
     } else {
       setFormData({
         description: '',
         status: 'entregue',
         delivery_date: format(new Date(), 'yyyy-MM-dd'),
-        delivery_link: ''
+        delivery_link: '',
+        production_status: 'ideacao',
+        assigned_to: '',
+        briefing: '',
+        deadline: ''
       });
     }
   }, [isEditing, isAdding]);
@@ -73,7 +88,8 @@ export function Dashboard() {
     company_name: '',
     total_deliveries_contracted: 10,
     monthly_value: 0,
-    due_day: 10
+    due_day: 10,
+    role: 'user' as UserRole
   });
 
   useEffect(() => {
@@ -108,12 +124,12 @@ export function Dashboard() {
           total_deliveries_contracted: clientFormData.total_deliveries_contracted,
           monthly_value: clientFormData.monthly_value,
           due_day: clientFormData.due_day,
-          role: 'user'
+          role: clientFormData.role
         }]);
 
       if (clientError) throw clientError;
 
-      alert('Cliente criado com sucesso!');
+      alert('Usuário criado com sucesso!');
       setIsAddingClient(false);
       setClientFormData({
         email: '',
@@ -121,7 +137,8 @@ export function Dashboard() {
         company_name: '',
         total_deliveries_contracted: 10,
         monthly_value: 0,
-        due_day: 10
+        due_day: 10,
+        role: 'user'
       });
       fetchData();
     } catch (err: any) {
@@ -195,13 +212,21 @@ export function Dashboard() {
       setCurrentUser(currentUserProfile);
       const isAdminUser = currentUserProfile?.role === 'admin';
 
-      // 2. If admin, fetch all clients for the selector
-      if (isAdminUser) {
+      // 2. If admin, fetch all clients and staff for the selector
+      if (isAdminUser || currentUserProfile?.role === 'designer') {
         const { data: clientsData } = await supabase
           .from('clients')
           .select('*')
+          .neq('role', 'designer')
           .order('company_name', { ascending: true });
         setAllClients(clientsData || []);
+
+        const { data: staffData } = await supabase
+          .from('clients')
+          .select('*')
+          .in('role', ['admin', 'designer'])
+          .order('company_name', { ascending: true });
+        setDesigners(staffData || []);
       }
 
       // 3. Determine which client to fetch data for
@@ -461,7 +486,8 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
   };
 
   const isActualAdmin = currentUser?.role === 'admin';
-  const showOverdueWarning = isOverdue && !isActualAdmin;
+  const isActualStaff = isActualAdmin || currentUser?.role === 'designer';
+  const showOverdueWarning = isOverdue && !isActualStaff;
 
   return (
     <div className="min-h-screen bg-app-background text-app-foreground pb-24 md:pb-12 transition-colors duration-300">
@@ -534,28 +560,40 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
               </div>
             )}
             
-            <nav className="hidden md:flex items-center gap-1 bg-gray-50 dark:bg-white/5 p-1 rounded-xl">
-              <button 
-                onClick={() => setActiveTab('calendar')}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                  activeTab === 'calendar' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              <nav className="hidden md:flex items-center gap-1 bg-gray-50 dark:bg-white/5 p-1 rounded-xl">
+                <button 
+                  onClick={() => setActiveTab('calendar')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                    activeTab === 'calendar' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  )}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Calendário
+                </button>
+                {isActualStaff && (
+                  <button 
+                    onClick={() => setActiveTab('workflow')}
+                    className={cn(
+                      "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                      activeTab === 'workflow' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    )}
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    Produção
+                  </button>
                 )}
-              >
-                <LayoutDashboard className="w-4 h-4" />
-                Calendário
-              </button>
-              <button 
-                onClick={() => setActiveTab('account')}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                  activeTab === 'account' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                )}
-              >
-                <CreditCard className="w-4 h-4" />
-                Minha Conta
-              </button>
-            </nav>
+                <button 
+                  onClick={() => setActiveTab('account')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                    activeTab === 'account' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  )}
+                >
+                  <CreditCard className="w-4 h-4" />
+                  Minha Conta
+                </button>
+              </nav>
           </div>
 
           <div className="flex items-center gap-4">
@@ -584,7 +622,9 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
-        {activeTab === 'calendar' ? (
+        {activeTab === 'workflow' ? (
+          <Workflow currentUserId={currentUserId} userRole={currentUser?.role || 'user'} />
+        ) : activeTab === 'calendar' ? (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
             {/* Welcome Section */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -746,6 +786,18 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
                 <LayoutDashboard className="w-5 h-5" />
                 Calendário Editorial
               </button>
+              {isActualStaff && (
+                <button 
+                  onClick={() => { setActiveTab('workflow'); setIsMobileMenuOpen(false); }}
+                  className={cn(
+                    "w-full px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3",
+                    activeTab === 'workflow' ? "bg-[#FF6321]/10 text-[#FF6321]" : "text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5"
+                  )}
+                >
+                  <ClipboardList className="w-5 h-5" />
+                  Fluxo de Produção
+                </button>
+              )}
               <button 
                 onClick={() => { setActiveTab('account'); setIsMobileMenuOpen(false); }}
                 className={cn(
@@ -792,6 +844,18 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
           <LayoutDashboard className="w-6 h-6" />
           <span className="text-[10px] font-bold uppercase tracking-wider">Calendário</span>
         </button>
+        {isActualStaff && (
+          <button 
+            onClick={() => setActiveTab('workflow')}
+            className={cn(
+              "flex flex-col items-center gap-1 transition-all",
+              activeTab === 'workflow' ? "text-[#FF6321]" : "text-gray-400"
+            )}
+          >
+            <ClipboardList className="w-6 h-6" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Produção</span>
+          </button>
+        )}
         <button 
           onClick={() => setActiveTab('account')}
           className={cn(
@@ -828,16 +892,68 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
             <form onSubmit={handleCreateClient} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Nome da Empresa</label>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Tipo de Usuário</label>
+                  <select 
+                    value={clientFormData.role}
+                    onChange={(e) => setClientFormData(prev => ({ ...prev, role: e.target.value as UserRole }))}
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-bold text-app-foreground"
+                  >
+                    <option value="user">Cliente (Acesso ao Calendário)</option>
+                    <option value="designer">Designer / Social Media (Gestor)</option>
+                    <option value="admin">Administrador Master</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Nome / Empresa</label>
                   <input 
                     type="text"
                     required
                     value={clientFormData.company_name}
                     onChange={(e) => setClientFormData(prev => ({ ...prev, company_name: e.target.value }))}
-                    placeholder="Ex: Monarca Hub"
+                    placeholder="Ex: Monarca Hub / João Silva"
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
                   />
                 </div>
+              </div>
+
+              {clientFormData.role === 'user' && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Entregas/Mês</label>
+                    <input 
+                      type="number"
+                      required
+                      value={clientFormData.total_deliveries_contracted}
+                      onChange={(e) => setClientFormData(prev => ({ ...prev, total_deliveries_contracted: parseInt(e.target.value) }))}
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Valor Mensal</label>
+                    <input 
+                      type="number"
+                      required
+                      value={clientFormData.monthly_value}
+                      onChange={(e) => setClientFormData(prev => ({ ...prev, monthly_value: parseFloat(e.target.value) }))}
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Dia Vencimento</label>
+                    <input 
+                      type="number"
+                      required
+                      min="1"
+                      max="31"
+                      value={clientFormData.due_day}
+                      onChange={(e) => setClientFormData(prev => ({ ...prev, due_day: parseInt(e.target.value) }))}
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">E-mail de Acesso</label>
                   <input 
@@ -849,50 +965,14 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Senha Provisória</label>
-                <input 
-                  type="password"
-                  required
-                  value={clientFormData.password}
-                  onChange={(e) => setClientFormData(prev => ({ ...prev, password: e.target.value }))}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Entregas/Mês</label>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Senha Provisória</label>
                   <input 
-                    type="number"
+                    type="password"
                     required
-                    value={clientFormData.total_deliveries_contracted}
-                    onChange={(e) => setClientFormData(prev => ({ ...prev, total_deliveries_contracted: parseInt(e.target.value) }))}
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Valor Mensal</label>
-                  <input 
-                    type="number"
-                    required
-                    value={clientFormData.monthly_value}
-                    onChange={(e) => setClientFormData(prev => ({ ...prev, monthly_value: parseFloat(e.target.value) }))}
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Dia Vencimento</label>
-                  <input 
-                    type="number"
-                    required
-                    min="1"
-                    max="31"
-                    value={clientFormData.due_day}
-                    onChange={(e) => setClientFormData(prev => ({ ...prev, due_day: parseInt(e.target.value) }))}
+                    value={clientFormData.password}
+                    onChange={(e) => setClientFormData(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder="••••••••"
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
                   />
                 </div>
@@ -987,7 +1067,80 @@ ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4">
+              {isActualAdmin && (
+                <div className="border-t border-app pt-6 mt-6 space-y-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 rounded-lg bg-[#FF6321]/10 flex items-center justify-center">
+                      <ClipboardList className="w-4 h-4 text-[#FF6321]" />
+                    </div>
+                    <h4 className="text-sm font-bold text-app-foreground uppercase tracking-widest">Fluxo de Produção</h4>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Responsável</label>
+                      <select 
+                        value={formData.assigned_to}
+                        onChange={(e) => setFormData(prev => ({ ...prev, assigned_to: e.target.value }))}
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-bold text-app-foreground"
+                      >
+                        <option value="">Selecione um Designer</option>
+                        {designers.map(d => (
+                          <option key={d.id} value={d.id}>{d.company_name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Prazo do Designer</label>
+                      <input 
+                        type="date"
+                        value={formData.deadline}
+                        onChange={(e) => setFormData(prev => ({ ...prev, deadline: e.target.value }))}
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Lapidar Ideia (Briefing / Orientação)</label>
+                    <textarea 
+                      rows={3}
+                      value={formData.briefing}
+                      onChange={(e) => setFormData(prev => ({ ...prev, briefing: e.target.value }))}
+                      placeholder="Orientações específicas para o designer..."
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium resize-none text-app-foreground"
+                    />
+                  </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Status da Produção</label>
+                      <div className="flex gap-2">
+                        <select 
+                          value={formData.production_status}
+                          onChange={(e) => setFormData(prev => ({ ...prev, production_status: e.target.value as ProductionStatus }))}
+                          className="flex-1 px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-bold text-app-foreground"
+                        >
+                          <option value="ideacao">Ideação (Aguardando)</option>
+                          <option value="producao">Em Produção</option>
+                          <option value="revisao">Revisão Interna</option>
+                          <option value="finalizado">Concluído (Pronto p/ Entrega)</option>
+                        </select>
+                        {formData.production_status === 'ideacao' && formData.assigned_to && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, production_status: 'producao' }))}
+                            className="px-4 bg-[#FF6321]/10 text-[#FF6321] rounded-2xl hover:bg-[#FF6321]/20 transition-all font-bold text-xs flex items-center gap-2 whitespace-nowrap"
+                          >
+                            <Send className="w-4 h-4" />
+                            Enviar p/ Produção
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-6 border-t border-app">
                 {isEditing && (
                   <button 
                     type="button"

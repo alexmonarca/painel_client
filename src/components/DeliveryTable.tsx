@@ -38,6 +38,13 @@ const statusConfig: Record<DeliveryStatus, { label: string; color: string; icon:
   'ñ fez - atrasado': { label: 'Atrasado', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/30', icon: AlertCircle },
 };
 
+const productionStatusConfig: Record<string, { label: string; color: string }> = {
+  ideacao: { label: 'Ideação', color: 'text-blue-400 bg-blue-400/10' },
+  producao: { label: 'Em Produção', color: 'text-orange-400 bg-orange-400/10' },
+  revisao: { label: 'Revisão', color: 'text-purple-400 bg-purple-400/10' },
+  finalizado: { label: 'Prod. Concluída', color: 'text-green-400 bg-green-400/10' },
+};
+
 interface SortableRowProps {
   delivery: Delivery;
   isAdmin?: boolean;
@@ -100,7 +107,7 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
           {delivery.description}
         </p>
       </td>
-      <td className="px-6 py-5 align-top">
+      <td className="px-6 py-5 align-top w-48">
         <div className="flex flex-col gap-2">
           <div className={cn(
             "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border",
@@ -109,6 +116,15 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
             <StatusIcon className="w-3.5 h-3.5" />
             {config.label}
           </div>
+
+          {isAdmin && delivery.production_status && delivery.production_status !== 'ideacao' && (
+            <div className={cn(
+              "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest",
+              productionStatusConfig[delivery.production_status].color
+            )}>
+              {productionStatusConfig[delivery.production_status].label}
+            </div>
+          )}
           
           {delivery.status === 'entregue' && !isAdmin && (
             <button
