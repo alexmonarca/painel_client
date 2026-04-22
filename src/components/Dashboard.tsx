@@ -13,7 +13,7 @@ import { Footer } from './Footer';
 import { cn } from '../lib/utils';
 import { Workflow } from './Workflow';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+import { domToCanvas } from 'modern-screenshot';
 
 export function Dashboard() {
   const [client, setClient] = useState<Client | null>(null);
@@ -115,35 +115,51 @@ export function Dashboard() {
       // Small delay to ensure any layout shifts settle if needed
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const canvas = await html2canvas(calendarRef.current, {
+      const canvas = await domToCanvas(calendarRef.current, {
         scale: 2, // Better quality
-        useCORS: true,
         backgroundColor: isDarkMode ? '#0a0a0a' : '#f5f5f5',
-        logging: false,
       });
 
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'px',
-        format: [canvas.width, canvas.height + 60] // Extra space for header
-      });
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 15;
+      const contentWidth = pageWidth - (margin * 2);
 
-      // Add Export Header
-      pdf.setFillColor(isDarkMode ? 10 : 245, isDarkMode ? 10 : 245, isDarkMode ? 10 : 245);
-      pdf.rect(0, 0, canvas.width, 60, 'F');
+      // Add Styled Export Header
+      const headerHeight = 45;
+      pdf.setFillColor(isDarkMode ? 13 : 250, isDarkMode ? 14 : 250, isDarkMode ? 18 : 250);
+      pdf.rect(0, 0, pageWidth, headerHeight, 'F');
       
-      pdf.setTextColor(isDarkMode ? 255 : 0, isDarkMode ? 255 : 0, isDarkMode ? 255 : 0);
+      // Title Section
+      pdf.setTextColor(isDarkMode ? 255 : 26, isDarkMode ? 255 : 26, isDarkMode ? 255 : 26);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(22);
+      pdf.text('Relatório de Calendário Editorial', margin, 18);
+      
+      pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(16);
-      pdf.text(`Relatório de Calendário Editorial - ${client?.company_name}`, 20, 25);
+      pdf.text(`Cliente: ${client?.company_name}`, margin, 28);
       
-      pdf.setFontSize(10);
-      pdf.setTextColor(100, 100, 100);
-      pdf.text(`Exportado em: ${format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}`, 20, 45);
+      // Export Metadata
+      pdf.setFontSize(11);
+      pdf.setTextColor(120, 120, 120);
+      const exportDate = format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+      pdf.text(`Data de Exportação: ${exportDate}`, margin, 38);
 
-      pdf.addImage(imgData, 'PNG', 0, 60, canvas.width, canvas.height);
+      // Subtle Divider
+      pdf.setDrawColor(isDarkMode ? 40 : 230, isDarkMode ? 40 : 230, isDarkMode ? 40 : 230);
+      pdf.line(margin, 42, pageWidth - margin, 42);
+
+      // Add the content image
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgHeight = (imgProps.height * contentWidth) / imgProps.width;
       
-      const fileName = `Calendario_${client?.company_name || 'Agencia'}_${format(currentMonth, 'MMMM_yyyy', { locale: ptBR })}.pdf`;
+      // If content is very long, it might overflow the first page. 
+      // For dashboard reports, we'll place it on the first page started from below header.
+      pdf.addImage(imgData, 'PNG', margin, headerHeight + 5, contentWidth, imgHeight);
+      
+      const fileName = `Relatorio_Editorial_${client?.company_name || 'Agencia'}_${format(currentMonth, 'MMMM_yyyy', { locale: ptBR })}.pdf`;
       pdf.save(fileName);
     } catch (err) {
       console.error('Error exporting PDF:', err);
