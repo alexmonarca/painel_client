@@ -46,6 +46,7 @@ export function Dashboard() {
   // Modal states for Admin
   const [isEditing, setIsEditing] = useState<Delivery | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [modalTab, setModalTab] = useState<'details' | 'production'>('details');
   const [formData, setFormData] = useState({
     description: '',
     status: 'entregue' as DeliveryStatus,
@@ -58,6 +59,9 @@ export function Dashboard() {
   });
 
   useEffect(() => {
+    if (isEditing || isAdding) {
+      setModalTab('details');
+    }
     if (isEditing) {
       setFormData({
         description: isEditing.description,
@@ -1114,7 +1118,7 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
       {/* Admin Edit Modal */}
       {(isEditing || isAdding) && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-app-card w-full max-w-lg rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-200 relative border border-app transition-colors">
+          <div className="bg-app-card w-full max-w-2xl rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-200 relative border border-app transition-colors max-h-[95vh] overflow-y-auto">
             <button 
               onClick={() => { setIsEditing(null); setIsAdding(false); }}
               className="absolute top-6 right-6 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl text-gray-400 transition-all"
@@ -1122,80 +1126,105 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-12 h-12 rounded-2xl bg-[#FF6321]/10 flex items-center justify-center">
+            <div className="flex flex-col md:flex-row md:items-center gap-4 mb-8">
+              <div className="w-12 h-12 rounded-2xl bg-[#FF6321]/10 flex items-center justify-center shrink-0">
                 {isEditing ? <Edit2 className="w-6 h-6 text-[#FF6321]" /> : <Plus className="w-6 h-6 text-[#FF6321]" />}
               </div>
               <div>
                 <h3 className="text-2xl font-bold text-app-foreground">
                   {isEditing ? 'Editar Entrega' : 'Nova Entrega'}
                 </h3>
-                <p className="text-sm text-gray-400">Preencha os detalhes da demanda abaixo.</p>
+                <p className="text-sm text-gray-400">Gerencie os detalhes e o fluxo de produção da demanda.</p>
               </div>
             </div>
+
+            {/* Tabs Header */}
+            {isActualAdmin && (
+              <div className="flex p-1 bg-gray-100 dark:bg-white/5 rounded-2xl mb-8">
+                <button
+                  type="button"
+                  onClick={() => setModalTab('details')}
+                  className={cn(
+                    "flex-1 py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2",
+                    modalTab === 'details' ? "bg-white dark:bg-[#FF6321] text-[#FF6321] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  )}
+                >
+                  <FileText className="w-4 h-4" />
+                  Detalhes da Entrega
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalTab('production')}
+                  className={cn(
+                    "flex-1 py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2",
+                    modalTab === 'production' ? "bg-white dark:bg-[#FF6321] text-[#FF6321] dark:text-white shadow-sm" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  )}
+                >
+                  <ClipboardList className="w-4 h-4" />
+                  Fluxo de Produção
+                </button>
+              </div>
+            )}
             
             <form onSubmit={handleSaveDelivery} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Data da Entrega</label>
-                <input 
-                  type="date"
-                  required
-                  value={formData.delivery_date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, delivery_date: e.target.value }))}
-                  className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Ideia / Descrição</label>
-                <textarea 
-                  required
-                  rows={4}
-                  value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Ex: Postagem sobre o novo serviço..."
-                  className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium resize-none text-app-foreground"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Status Atual</label>
-                <select 
-                  value={formData.status}
-                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as DeliveryStatus }))}
-                  className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-bold text-app-foreground"
-                >
-                  <option value="entregue">Entregue</option>
-                  <option value="aprovado">Aprovado</option>
-                  <option value="finalizado">Finalizado</option>
-                  <option value="recusado">Recusado</option>
-                  <option value="ñ fez - atrasado">Atrasado</option>
-                </select>
-              </div>
-
-              {formData.status === 'finalizado' && (
-                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Link da Entrega / Postagem</label>
-                  <input 
-                    type="url"
-                    value={formData.delivery_link}
-                    onChange={(e) => setFormData(prev => ({ ...prev, delivery_link: e.target.value }))}
-                    placeholder="https://..."
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
-                  />
-                </div>
-              )}
-
-              {isActualAdmin && (
-                <div className="border-t border-app pt-6 mt-6 space-y-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-8 h-8 rounded-lg bg-[#FF6321]/10 flex items-center justify-center">
-                      <ClipboardList className="w-4 h-4 text-[#FF6321]" />
+              {modalTab === 'details' || !isActualAdmin ? (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Data da Entrega</label>
+                      <input 
+                        type="date"
+                        required
+                        value={formData.delivery_date}
+                        onChange={(e) => setFormData(prev => ({ ...prev, delivery_date: e.target.value }))}
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                      />
                     </div>
-                    <h4 className="text-sm font-bold text-app-foreground uppercase tracking-widest">Fluxo de Produção</h4>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Status Atual</label>
+                      <select 
+                        value={formData.status}
+                        onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as DeliveryStatus }))}
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-bold text-app-foreground"
+                      >
+                        <option value="entregue">Entregue</option>
+                        <option value="aprovado">Aprovado</option>
+                        <option value="finalizado">Finalizado</option>
+                        <option value="recusado">Recusado</option>
+                        <option value="ñ fez - atrasado">Atrasado</option>
+                      </select>
+                    </div>
                   </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Ideia / Descrição</label>
+                    <textarea 
+                      required
+                      rows={4}
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Ex: Postagem sobre o novo serviço..."
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium resize-none text-app-foreground"
+                    />
+                  </div>
+
+                  {formData.status === 'finalizado' && (
+                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Link da Entrega / Postagem</label>
+                      <input 
+                        type="url"
+                        value={formData.delivery_link}
+                        onChange={(e) => setFormData(prev => ({ ...prev, delivery_link: e.target.value }))}
+                        placeholder="https://..."
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-medium text-app-foreground"
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Responsável</label>
                       <select 
@@ -1223,7 +1252,7 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Lapidar Ideia (Briefing / Orientação)</label>
                     <textarea 
-                      rows={3}
+                      rows={5}
                       value={formData.briefing}
                       onChange={(e) => setFormData(prev => ({ ...prev, briefing: e.target.value }))}
                       placeholder="Orientações específicas para o designer..."
@@ -1231,31 +1260,31 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
                     />
                   </div>
 
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Status da Produção</label>
-                      <div className="flex gap-2">
-                        <select 
-                          value={formData.production_status}
-                          onChange={(e) => setFormData(prev => ({ ...prev, production_status: e.target.value as ProductionStatus }))}
-                          className="flex-1 px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-bold text-app-foreground"
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Status da Produção</label>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <select 
+                        value={formData.production_status}
+                        onChange={(e) => setFormData(prev => ({ ...prev, production_status: e.target.value as ProductionStatus }))}
+                        className="flex-1 px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-bold text-app-foreground"
+                      >
+                        <option value="ideacao">Ideação (Aguardando)</option>
+                        <option value="producao">Em Produção</option>
+                        <option value="revisao">Revisão Interna</option>
+                        <option value="finalizado">Concluído (Pronto p/ Entrega)</option>
+                      </select>
+                      {formData.production_status === 'ideacao' && formData.assigned_to && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, production_status: 'producao' }))}
+                          className="px-6 py-3 bg-[#FF6321]/10 text-[#FF6321] rounded-2xl hover:bg-[#FF6321]/20 transition-all font-bold text-sm flex items-center justify-center gap-2"
                         >
-                          <option value="ideacao">Ideação (Aguardando)</option>
-                          <option value="producao">Em Produção</option>
-                          <option value="revisao">Revisão Interna</option>
-                          <option value="finalizado">Concluído (Pronto p/ Entrega)</option>
-                        </select>
-                        {formData.production_status === 'ideacao' && formData.assigned_to && (
-                          <button
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, production_status: 'producao' }))}
-                            className="px-4 bg-[#FF6321]/10 text-[#FF6321] rounded-2xl hover:bg-[#FF6321]/20 transition-all font-bold text-xs flex items-center gap-2 whitespace-nowrap"
-                          >
-                            <Send className="w-4 h-4" />
-                            Enviar p/ Produção
-                          </button>
-                        )}
-                      </div>
+                          <Send className="w-4 h-4" />
+                          Enviar p/ Produção
+                        </button>
+                      )}
                     </div>
+                  </div>
                 </div>
               )}
 
