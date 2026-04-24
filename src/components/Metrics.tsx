@@ -9,11 +9,7 @@ interface MetricsProps {
 }
 
 export function Metrics({ deliveries, totalContracted, isStaffView }: MetricsProps) {
-  const completed = deliveries.filter(d => 
-    isStaffView 
-      ? d.production_status === 'finalizado' 
-      : (d.status === 'aprovado' || d.status === 'finalizado')
-  ).length;
+  const completed = deliveries.filter(d => d.status === 'finalizado').length;
   const percentage = totalContracted > 0 ? Math.round((completed / totalContracted) * 100) : 0;
 
   const data = [
@@ -53,7 +49,7 @@ export function Metrics({ deliveries, totalContracted, isStaffView }: MetricsPro
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Progresso Mensal</p>
           <h3 className="text-2xl font-bold text-app-foreground">{completed} / {totalContracted}</h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Entregas realizadas</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Demandas finalizadas</p>
         </div>
       </div>
 
