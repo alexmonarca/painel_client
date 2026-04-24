@@ -294,6 +294,7 @@ export function Dashboard() {
       
       if (profileError && profileError.code !== 'PGRST116') {
         console.error('Error fetching current user profile:', profileError);
+        setFetchError(profileError);
       } else {
         console.log('Profile found:', currentUserProfile);
       }
@@ -385,6 +386,10 @@ export function Dashboard() {
           console.error('Erro ao buscar perfil do cliente alvo:', clientError);
         }
         setClient(clientData);
+      } else if (currentUserProfile?.role === 'designer') {
+        // For designers with no client selected, set their own profile as the "active client"
+        // to satisfy UI requirements while showing global data
+        setClient(currentUserProfile);
       }
 
       // Fetch deliveries for current month
@@ -535,9 +540,20 @@ export function Dashboard() {
           
           <div className="bg-blue-50 p-4 rounded-2xl mb-4 border border-blue-100">
             <p className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-1">Seu ID Atual (UID):</p>
-            <code className="text-sm text-blue-600 break-all font-mono bg-white/50 px-2 py-1 rounded block mt-1">
-              {currentUserId}
-            </code>
+            <div className="flex items-center gap-2">
+              <code className="text-sm text-blue-600 break-all font-mono bg-white/50 px-2 py-1 rounded block flex-1">
+                {currentUserId}
+              </code>
+              <button 
+                onClick={() => {
+                  navigator.clipboard.writeText(currentUserId || '');
+                  alert('ID copiado!');
+                }}
+                className="text-[10px] font-bold text-blue-700 hover:underline"
+              >
+                Copiar
+              </button>
+            </div>
           </div>
 
           {fetchError && (
@@ -560,23 +576,41 @@ export function Dashboard() {
           )}
 
           <div className="bg-gray-50 p-6 rounded-2xl space-y-4 text-sm relative z-[60]">
-            <p className="font-semibold text-gray-700">Comando de Reinstalação (SQL):</p>
+            <p className="font-semibold text-gray-700">Comando de Liberação (SQL):</p>
             <p className="text-xs text-gray-500">
-              Seu perfil não foi encontrado automaticamente. Por favor, execute o comando abaixo no Editor SQL do seu Supabase para garantir que seu usuário tenha acesso administrativo:
+              Seu perfil não foi encontrado. Escolha o comando abaixo de acordo com seu cargo e execute no Editor SQL do Supabase (isso também desativará restrições de acesso para esta tabela):
             </p>
-            <pre className="bg-white p-3 rounded-lg text-[10px] border border-gray-200 overflow-x-auto text-gray-700 font-mono">
-              {`-- 1. Garante que seu usuário seja Admin Master
+            
+            <div className="space-y-3">
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Para Administrador:</p>
+                <pre className="bg-white p-3 rounded-lg text-[10px] border border-gray-200 overflow-x-auto text-gray-700 font-mono">
+                  {`-- Garante acesso e cargo admin
+ALTER TABLE public.clients DISABLE ROW LEVEL SECURITY;
 INSERT INTO public.clients (id, company_name, total_deliveries_contracted, role) 
 VALUES ('${currentUserId}', 'Admin Monarca', 99, 'admin')
 ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
-            </pre>
+                </pre>
+              </div>
+              
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Para Designer (Equipe):</p>
+                <pre className="bg-white p-3 rounded-lg text-[10px] border border-gray-200 overflow-x-auto text-gray-700 font-mono">
+                  {`-- Garante acesso e cargo designer
+ALTER TABLE public.clients DISABLE ROW LEVEL SECURITY;
+INSERT INTO public.clients (id, company_name, total_deliveries_contracted, role) 
+VALUES ('${currentUserId}', 'Designer Equipe', 15, 'designer')
+ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
+                </pre>
+              </div>
+            </div>
           </div>
           <div className="flex flex-col gap-2 mt-8 relative z-[60]">
             <button 
-              onClick={() => fetchData()}
+              onClick={() => window.location.reload()}
               className="w-full py-4 bg-[#FF6321] text-white font-bold rounded-2xl hover:bg-[#e5591e] shadow-lg shadow-[#FF6321]/20 transition-all active:scale-[0.98]"
             >
-              Tentar Novamente
+              Já executei o SQL, Entrar Agora
             </button>
             <button 
               onClick={handleLogout}
