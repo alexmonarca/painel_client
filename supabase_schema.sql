@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.deliveries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
   description TEXT NOT NULL,
-  status TEXT DEFAULT 'entregue',
+  status TEXT DEFAULT 'ideia apresentada',
   delivery_date DATE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );

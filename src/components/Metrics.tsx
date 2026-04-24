@@ -5,10 +5,15 @@ import { Delivery } from '../types';
 interface MetricsProps {
   deliveries: Delivery[];
   totalContracted: number;
+  isStaffView?: boolean;
 }
 
-export function Metrics({ deliveries, totalContracted }: MetricsProps) {
-  const completed = deliveries.filter(d => d.status === 'aprovado' || d.status === 'finalizado').length;
+export function Metrics({ deliveries, totalContracted, isStaffView }: MetricsProps) {
+  const completed = deliveries.filter(d => 
+    isStaffView 
+      ? d.production_status === 'finalizado' 
+      : (d.status === 'aprovado' || d.status === 'finalizado')
+  ).length;
   const percentage = totalContracted > 0 ? Math.round((completed / totalContracted) * 100) : 0;
 
   const data = [
@@ -57,9 +62,9 @@ export function Metrics({ deliveries, totalContracted }: MetricsProps) {
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Status das Demandas</p>
         <div className="space-y-2 mt-3">
           <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-500 dark:text-gray-400">Aguardando Aprovação</span>
+            <span className="text-gray-500 dark:text-gray-400">Aguardando Aprov. Cliente</span>
             <span className="font-semibold text-app-foreground">
-              {deliveries.filter(d => d.status === 'entregue').length}
+              {deliveries.filter(d => d.status === 'ideia apresentada').length}
             </span>
           </div>
           <div className="flex justify-between items-center text-sm">

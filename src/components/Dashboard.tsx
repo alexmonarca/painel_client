@@ -49,7 +49,7 @@ export function Dashboard() {
   const [modalTab, setModalTab] = useState<'details' | 'production'>('details');
   const [formData, setFormData] = useState({
     description: '',
-    status: 'entregue' as DeliveryStatus,
+    status: 'ideia apresentada' as DeliveryStatus,
     delivery_date: format(new Date(), 'yyyy-MM-dd'),
     delivery_link: '',
     production_status: 'ideacao' as ProductionStatus,
@@ -57,6 +57,12 @@ export function Dashboard() {
     briefing: '',
     deadline: ''
   });
+
+  useEffect(() => {
+    if (currentUser?.role === 'designer' && activeTab === 'calendar') {
+      setActiveTab('workflow');
+    }
+  }, [currentUser, activeTab]);
 
   useEffect(() => {
     if (isEditing || isAdding) {
@@ -76,7 +82,7 @@ export function Dashboard() {
     } else {
       setFormData({
         description: '',
-        status: 'entregue',
+        status: 'ideia apresentada',
         delivery_date: format(new Date(), 'yyyy-MM-dd'),
         delivery_link: '',
         production_status: 'ideacao',
@@ -364,52 +370,66 @@ export function Dashboard() {
 
       // 3. Determine which client to fetch data for
       // If admin has selected a client, use that. Otherwise use the logged-in user's ID.
-      const targetClientId = selectedClientId || user.id;
+      const targetClientId = selectedClientId || (currentUserProfile?.role === 'designer' ? null : user.id);
 
-      // Fetch target client profile
-      const { data: clientData, error: clientError } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('id', targetClientId)
-        .single();
+      // Fetch target client profile if we have a client ID
+      if (targetClientId) {
+        const { data: clientData, error: clientError } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('id', targetClientId)
+          .single();
 
-      if (clientError) {
-        setFetchError(clientError);
-        console.error('Erro ao buscar perfil do cliente alvo:', clientError);
+        if (clientError) {
+          setFetchError(clientError);
+          console.error('Erro ao buscar perfil do cliente alvo:', clientError);
+        }
+        setClient(clientData);
       }
-      setClient(clientData);
 
-      // Fetch deliveries for current month for the target client
+      // Fetch deliveries for current month
       const start = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
       const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
-      const { data: deliveryData, error: deliveryError } = await supabase
+      let query = supabase
         .from('deliveries')
         .select('*')
-        .eq('client_id', targetClientId)
         .gte('delivery_date', start)
         .lte('delivery_date', end)
         .order('delivery_date', { ascending: true });
 
+      if (currentUserProfile?.role === 'designer' && !selectedClientId) {
+        // Designer assigned tasks for all clients this month
+        query = query.eq('assigned_to', user.id);
+      } else if (targetClientId) {
+        query = query.eq('client_id', targetClientId);
+      }
+
+      const { data: deliveryData, error: deliveryError } = await query;
+
       if (deliveryError) throw deliveryError;
       setDeliveries(deliveryData || []);
 
-      // Fetch invoices
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('client_id', targetClientId)
-        .order('due_date', { ascending: false });
+      // Fetch invoices only if we have a specific client target
+      if (targetClientId) {
+        const { data: invoiceData, error: invoiceError } = await supabase
+          .from('invoices')
+          .select('*')
+          .eq('client_id', targetClientId)
+          .order('due_date', { ascending: false });
 
-      if (invoiceError) throw invoiceError;
-      setInvoices(invoiceData || []);
+        if (invoiceError) throw invoiceError;
+        setInvoices(invoiceData || []);
 
-      // Check for overdue (if any pending invoice has due_date < today)
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const hasOverdue = (invoiceData || []).some(inv => 
-        inv.status !== 'pago' && inv.due_date < today
-      );
-      setIsOverdue(hasOverdue);
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const hasOverdue = (invoiceData || []).some(inv => 
+          inv.status !== 'pago' && inv.due_date < today
+        );
+        setIsOverdue(hasOverdue);
+      } else {
+        setInvoices([]);
+        setIsOverdue(false);
+      }
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
@@ -643,14 +663,15 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
               )}
             </div>
 
-            {isActualAdmin && allClients.length > 0 && (
+            {isActualStaff && allClients.length > 0 && (
               <div className="hidden lg:flex items-center gap-2 ml-4 bg-gray-50 dark:bg-white/5 p-1 rounded-xl border border-app">
                 <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest ml-2">Visualizando:</span>
                 <select 
-                  value={selectedClientId || currentUserId || ''}
-                  onChange={(e) => setSelectedClientId(e.target.value)}
+                  value={selectedClientId || ''}
+                  onChange={(e) => setSelectedClientId(e.target.value || null)}
                   className="bg-transparent border-none text-xs font-bold text-app-foreground outline-none focus:ring-0 cursor-pointer pr-8"
                 >
+                  {currentUser?.role === 'designer' && <option value="">Minhas Demandas (Geral)</option>}
                   {allClients.map(c => (
                     <option key={c.id} value={c.id} className="bg-app-card text-app-foreground">
                       {c.company_name} {c.id === currentUserId ? '(Você)' : ''}
@@ -661,16 +682,18 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
             )}
             
               <nav className="hidden md:flex items-center gap-1 bg-gray-50 dark:bg-white/5 p-1 rounded-xl">
-                <button 
-                  onClick={() => setActiveTab('calendar')}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                    activeTab === 'calendar' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                  )}
-                >
-                  <LayoutDashboard className="w-4 h-4" />
-                  Calendário
-                </button>
+                {currentUser?.role !== 'designer' && (
+                  <button 
+                    onClick={() => setActiveTab('calendar')}
+                    className={cn(
+                      "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                      activeTab === 'calendar' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    )}
+                  >
+                    <LayoutDashboard className="w-4 h-4" />
+                    Calendário
+                  </button>
+                )}
                 {isActualStaff && (
                   <button 
                     onClick={() => setActiveTab('workflow')}
@@ -723,7 +746,41 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
         {activeTab === 'workflow' ? (
-          <Workflow currentUserId={currentUserId} userRole={currentUser?.role || 'user'} />
+          <div className="space-y-8">
+                {currentUser?.role === 'designer' && (
+                  <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-8">
+                    {/* Welcome Section for Designer */}
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                      <div>
+                        <h1 className="text-3xl font-extrabold text-app-foreground mb-2">
+                          Olá, {currentUser.company_name}
+                        </h1>
+                        <p className="text-gray-500 dark:text-gray-400">
+                          {selectedClientId ? `Visualizando fluxo para: ${client?.company_name}` : 'Acompanhe aqui o fluxo de produção e suas demandas atribuídas.'}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => setIsAdding(true)}
+                          className="bg-gray-900 dark:bg-[#FF6321] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-[#e5591e] transition-all shadow-lg shadow-gray-900/10"
+                        >
+                          <Plus className="w-5 h-5" />
+                          Nova Entrega
+                        </button>
+                      </div>
+                    </div>
+
+                    <ReviewBlock />
+                    
+                    <Metrics 
+                      deliveries={deliveries} 
+                      totalContracted={client?.total_deliveries_contracted || currentUser.total_deliveries_contracted || 0}
+                      isStaffView={true}
+                    />
+                  </div>
+                )}
+            <Workflow currentUserId={currentUserId} userRole={currentUser?.role || 'user'} clientId={selectedClientId} />
+          </div>
         ) : activeTab === 'calendar' ? (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
             <div ref={calendarRef} className={cn("space-y-8 pb-4", exporting && "p-8 rounded-3xl")}>
@@ -899,16 +956,18 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
             </div>
 
             <nav className="space-y-2">
-              <button 
-                onClick={() => { setActiveTab('calendar'); setIsMobileMenuOpen(false); }}
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3",
-                  activeTab === 'calendar' ? "bg-[#FF6321]/10 text-[#FF6321]" : "text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5"
-                )}
-              >
-                <LayoutDashboard className="w-5 h-5" />
-                Calendário Editorial
-              </button>
+              {currentUser?.role !== 'designer' && (
+                <button 
+                  onClick={() => { setActiveTab('calendar'); setIsMobileMenuOpen(false); }}
+                  className={cn(
+                    "w-full px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3",
+                    activeTab === 'calendar' ? "bg-[#FF6321]/10 text-[#FF6321]" : "text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5"
+                  )}
+                >
+                  <LayoutDashboard className="w-5 h-5" />
+                  Calendário Editorial
+                </button>
+              )}
               {isActualStaff && (
                 <button 
                   onClick={() => { setActiveTab('workflow'); setIsMobileMenuOpen(false); }}
@@ -957,16 +1016,18 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
 
       {/* Mobile Bottom Navigation */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-app-card border-t border-app z-[55] px-6 py-3 flex items-center justify-around shadow-[0_-4px_20px_rgba(0,0,0,0.1)] transition-colors duration-300">
-        <button 
-          onClick={() => setActiveTab('calendar')}
-          className={cn(
-            "flex flex-col items-center gap-1 transition-all",
-            activeTab === 'calendar' ? "text-[#FF6321]" : "text-gray-400"
-          )}
-        >
-          <LayoutDashboard className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase tracking-wider">Calendário</span>
-        </button>
+        {currentUser?.role !== 'designer' && (
+          <button 
+            onClick={() => setActiveTab('calendar')}
+            className={cn(
+              "flex flex-col items-center gap-1 transition-all",
+              activeTab === 'calendar' ? "text-[#FF6321]" : "text-gray-400"
+            )}
+          >
+            <LayoutDashboard className="w-6 h-6" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Calendário</span>
+          </button>
+        )}
         {isActualStaff && (
           <button 
             onClick={() => setActiveTab('workflow')}
@@ -1188,7 +1249,8 @@ ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
                         onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as DeliveryStatus }))}
                         className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-app rounded-2xl focus:ring-2 focus:ring-[#FF6321]/20 focus:border-[#FF6321] outline-none transition-all font-bold text-app-foreground"
                       >
-                        <option value="entregue">Entregue</option>
+                        <option value="ideia apresentada">Ideia Apresentada</option>
+                        <option value="arquivo entregue">Arquivo Entregue</option>
                         <option value="aprovado">Aprovado</option>
                         <option value="finalizado">Finalizado</option>
                         <option value="recusado">Recusado</option>

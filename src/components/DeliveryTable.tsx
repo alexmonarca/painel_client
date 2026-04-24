@@ -31,7 +31,8 @@ interface DeliveryTableProps {
 }
 
 const statusConfig: Record<DeliveryStatus, { label: string; color: string; icon: any }> = {
-  entregue: { label: 'Entregue', color: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/30', icon: Clock },
+  'ideia apresentada': { label: 'Ideia Apresentada', color: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/30', icon: Clock },
+  'arquivo entregue': { label: 'Arquivo Entregue', color: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800/30', icon: CheckCircle2 },
   aprovado: { label: 'Aprovado', color: 'bg-green-50 text-green-600 border-green-100 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/30', icon: CheckCircle2 },
   finalizado: { label: 'Finalizado', color: 'bg-gray-50 text-gray-600 border-gray-100 dark:bg-white/5 dark:text-gray-400 dark:border-white/10', icon: CheckCircle },
   recusado: { label: 'Recusado', color: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/30', icon: XCircle },
@@ -126,7 +127,7 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
             </div>
           )}
           
-          {delivery.status === 'entregue' && !isAdmin && (
+          {delivery.status === 'ideia apresentada' && !isAdmin && (
             <button
               onClick={() => onApprove(delivery.id)}
               className="text-[10px] font-bold uppercase tracking-wider text-[#FF6321] hover:underline text-left ml-1"

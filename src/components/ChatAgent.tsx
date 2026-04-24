@@ -170,7 +170,7 @@ REGRAS DE OURO:
               const args = call.args as any;
               const { error } = await supabase
                 .from('deliveries')
-                .insert([{ ...args, client_id: client.id, status: 'entregue' }]);
+                .insert([{ ...args, client_id: client.id, status: 'ideia apresentada' }]);
               
               if (error) throw error;
               toolResponses.push({

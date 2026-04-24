@@ -1,4 +1,4 @@
-export type DeliveryStatus = 'entregue' | 'aprovado' | 'finalizado' | 'recusado' | 'ñ fez - atrasado';
+export type DeliveryStatus = 'ideia apresentada' | 'arquivo entregue' | 'aprovado' | 'finalizado' | 'recusado' | 'ñ fez - atrasado';
 export type UserRole = 'user' | 'admin' | 'designer';
 export type ProductionStatus = 'ideacao' | 'producao' | 'revisao' | 'finalizado';
 

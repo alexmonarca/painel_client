@@ -45,6 +45,7 @@ import { cn } from '../lib/utils';
 interface WorkflowProps {
   currentUserId: string | null;
   userRole: string;
+  clientId?: string | null;
 }
 
 const COLUMNS: { id: ProductionStatus; title: string; color: string }[] = [
@@ -54,7 +55,7 @@ const COLUMNS: { id: ProductionStatus; title: string; color: string }[] = [
   { id: 'finalizado', title: 'Finalizado', color: 'border-t-green-500' },
 ];
 
-export function Workflow({ currentUserId, userRole }: WorkflowProps) {
+export function Workflow({ currentUserId, userRole, clientId }: WorkflowProps) {
   const [tasks, setTasks] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [designers, setDesigners] = useState<{ id: string, full_name: string }[]>([]);
@@ -90,6 +91,10 @@ export function Workflow({ currentUserId, userRole }: WorkflowProps) {
         query = query.eq('assigned_to', currentUserId);
       }
 
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
+
       const { data, error } = await query;
       if (error) throw error;
       setTasks(data || []);
@@ -118,7 +123,7 @@ export function Workflow({ currentUserId, userRole }: WorkflowProps) {
     if (userRole !== 'designer') {
       fetchDesigners();
     }
-  }, [currentUserId, userRole]);
+  }, [currentUserId, userRole, clientId]);
 
   const handleUpdateTask = async (updates: Partial<Delivery>) => {
     if (!selectedTask) return;
