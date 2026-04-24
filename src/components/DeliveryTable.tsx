@@ -70,7 +70,7 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
     position: isDragging ? 'relative' as const : 'static' as const,
   };
 
-  const config = statusConfig[delivery.status];
+  const config = statusConfig[delivery.status] || statusConfig['ideia apresentada'];
   const StatusIcon = config.icon;
 
   return (
@@ -121,13 +121,13 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
           {isAdmin && delivery.production_status && delivery.production_status !== 'ideacao' && (
             <div className={cn(
               "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest",
-              productionStatusConfig[delivery.production_status].color
+              productionStatusConfig[delivery.production_status]?.color || 'text-gray-400 bg-gray-400/10'
             )}>
-              {productionStatusConfig[delivery.production_status].label}
+              {productionStatusConfig[delivery.production_status]?.label || delivery.production_status}
             </div>
           )}
           
-          {delivery.status === 'ideia apresentada' && !isAdmin && (
+          {(delivery.status === 'ideia apresentada' || (delivery.status as string) === 'entregue') && !isAdmin && (
             <button
               onClick={() => onApprove(delivery.id)}
               className="text-[10px] font-bold uppercase tracking-wider text-[#FF6321] hover:underline text-left ml-1"

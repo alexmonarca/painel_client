@@ -64,7 +64,7 @@ export function Metrics({ deliveries, totalContracted, isStaffView }: MetricsPro
           <div className="flex justify-between items-center text-sm">
             <span className="text-gray-500 dark:text-gray-400">Aguardando Aprov. Cliente</span>
             <span className="font-semibold text-app-foreground">
-              {deliveries.filter(d => d.status === 'ideia apresentada').length}
+              {deliveries.filter(d => d.status === 'ideia apresentada' || (d.status as string) === 'entregue').length}
             </span>
           </div>
           <div className="flex justify-between items-center text-sm">
