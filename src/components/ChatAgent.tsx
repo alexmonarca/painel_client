@@ -111,7 +111,7 @@ export function ChatAgent({ client, deliveries, isOpen, onClose, onUpdate }: Cha
       };
 
       const systemInstruction = `Você é o Estrategista Sênior de Marketing da Agência Monarca.
-Seu tom é profissional, inspirador, direto e altamente estratégico. Você não é apenas um assistente, você é um parceiro de crescimento para o cliente.
+Seu tom é profissional, inspirador, direto e altamente estratégico. Você é o "Estrategista Monarca".
 
 DATA ATUAL: ${new Date().toLocaleDateString('pt-BR')}
 CLIENTE: ${client.company_name}
@@ -121,21 +121,22 @@ PLANO ATUAL: ${client.budget_details.plan || 'Premium'}
 CALENDÁRIO ATUAL (CONTEXTO):
 ${deliveriesContext || 'Nenhuma entrega registrada ainda.'}
 
-SUA MISSÃO:
-1. Analisar o feedback do cliente sobre o calendário e sugerir melhorias estratégicas.
-2. Propor ganchos de vendas (copywriting), CTAs (Call to Action) e formatos (Reels, Carrossel, Stories) que convertam.
-3. Manter-se estritamente dentro da especialidade do cliente: ${client.budget_details.description}.
-4. Se o cliente concordar com uma alteração ou nova ideia, use as ferramentas disponíveis para atualizar ou criar a entrega no calendário.
-5. NUNCA prometa alterações de orçamento ou prazos operacionais. Foque na ESTRATÉGIA e no CONTEÚDO.
-6. Use emojis de forma profissional para dar personalidade à Agência Monarca.
+SUA MISSÃO E COMPORTAMENTO:
+1. Se o cliente pedir para criar um calendário, sugerir ideias para datas específicas ou "preencher" o mês, você deve OBRIGATORIAMENTE usar a ferramenta 'create_delivery' para cada ideia proposta.
+2. Não apenas diga que vai fazer; EXECUTE a criação no calendário usando as ferramentas.
+3. Se o cliente sugerir uma alteração em algo que já existe, use 'update_delivery'.
+4. Quando criar ideias, tente distribuí-las de forma estratégica ao longo do mês, respeitando a frequência do plano do cliente.
+5. Analise o feedback do cliente e proponha ganchos de vendas (copywriting) e formatos que convertam (Reels, Carrossel, Stories).
+6. Mantenha as respostas curtas, impactantes e focadas em autoridade de marca.
+7. Use emojis profissionais. 🚀🎯🔥
 
-REGRAS DE OURO:
-- Respostas curtas e impactantes.
-- Foco em resultados e autoridade de marca.
-- Se o cliente pedir algo fora do escopo, direcione-o gentilmente para falar com o gerente de conta humano.`;
+REGRAS CRÍTICAS:
+- Se houver silêncio sobre datas, sugira datas próximas à data atual (${new Date().toLocaleDateString('pt-BR')}).
+- Sempre confirme para o cliente que as ideias foram inseridas no calendário oficial dele após usar a ferramenta.
+- NUNCA diga para o cliente "inserir manualmente". Você é quem faz isso por ele via ferramentas.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: [
           ...messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })),
           { role: 'user', parts: [{ text: userMessage }] }
@@ -148,6 +149,8 @@ REGRAS DE OURO:
       });
 
       const functionCalls = response.functionCalls;
+      const initialAiText = response.text || "";
+
       if (functionCalls) {
         const toolResponses = [];
         for (const call of functionCalls) {
@@ -192,9 +195,15 @@ REGRAS DE OURO:
 
         if (onUpdate) onUpdate();
 
+        // If the AI sent initial text with the tools, add it first
+        if (initialAiText.trim()) {
+          setMessages(prev => [...prev, { role: 'model', text: initialAiText }]);
+          await saveMessage('model', initialAiText);
+        }
+
         // After tool execution, get a final response from the model
         const followUpResponse = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-2.0-flash",
           contents: [
             ...messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })),
             { role: 'user', parts: [{ text: userMessage }] },
@@ -207,9 +216,11 @@ REGRAS DE OURO:
           config: { systemInstruction }
         });
         
-        const aiText = followUpResponse.text || "Ação concluída com sucesso!";
-        setMessages(prev => [...prev, { role: 'model', text: aiText }]);
-        await saveMessage('model', aiText);
+        const aiText = followUpResponse.text || (initialAiText.trim() ? "Calendário atualizado!" : "Ação concluída com sucesso!");
+        if (aiText !== initialAiText) {
+          setMessages(prev => [...prev, { role: 'model', text: aiText }]);
+          await saveMessage('model', aiText);
+        }
       } else {
         const aiText = response.text || "Desculpe, tive um problema ao processar sua ideia. Pode repetir?";
         setMessages(prev => [...prev, { role: 'model', text: aiText }]);

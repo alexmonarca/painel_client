@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Client, Delivery, DeliveryStatus, Invoice, UserRole, ProductionStatus } from '../types';
 import { Metrics } from './Metrics';
 import { DeliveryTable } from './DeliveryTable';
-import { LogOut, Calendar, FileText, ChevronLeft, ChevronRight, Loader2, LayoutDashboard, CreditCard, Plus, Edit2, Trash2, X, Moon, Sun, MessageSquare, Sparkles, AlertCircle, Menu, ClipboardList, Send, UserCheck, Download, Printer } from 'lucide-react';
+import { LogOut, Calendar, FileText, ChevronLeft, ChevronRight, Loader2, LayoutDashboard, CreditCard, Plus, Edit2, Trash2, X, Moon, Sun, MessageSquare, Sparkles, AlertCircle, Menu, ClipboardList, Send, UserCheck, Download, Printer, Grid, Database, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Account } from './Account';
@@ -12,6 +12,7 @@ import { ChatAgent } from './ChatAgent';
 import { Footer } from './Footer';
 import { cn } from '../lib/utils';
 import { Workflow } from './Workflow';
+import { CalendarGrid } from './CalendarGrid';
 import { jsPDF } from 'jspdf';
 import { domToCanvas } from 'modern-screenshot';
 
@@ -25,7 +26,7 @@ export function Dashboard() {
   const [isOverdue, setIsOverdue] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<'calendar' | 'account' | 'workflow'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'account' | 'workflow' | 'setup'>('calendar');
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark');
@@ -59,9 +60,7 @@ export function Dashboard() {
   });
 
   useEffect(() => {
-    if (currentUser?.role === 'designer' && activeTab === 'calendar') {
-      setActiveTab('workflow');
-    }
+    // No longer forcing designers away from calendar
   }, [currentUser, activeTab]);
 
   useEffect(() => {
@@ -116,6 +115,7 @@ export function Dashboard() {
 
   const calendarRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const [calendarViewMode, setCalendarViewMode] = useState<'list' | 'grid'>('grid');
 
   const handleExportPDF = async () => {
     if (!calendarRef.current) return;
@@ -256,9 +256,22 @@ export function Dashboard() {
       setIsEditing(null);
       setIsAdding(false);
       fetchData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving delivery:', err);
-      alert('Erro ao salvar entrega.');
+      
+      // Specific check for the constraint error the user reported
+      if (err.message?.includes('violates check constraint "deliveries_status_check"')) {
+        const sqlFix = `ALTER TABLE public.deliveries DROP CONSTRAINT IF EXISTS deliveries_status_check;
+ALTER TABLE public.deliveries ADD CONSTRAINT deliveries_status_check 
+CHECK (status IN ('ideia apresentada', 'arquivo entregue', 'aprovado', 'finalizado', 'recusado', 'ñ fez - atrasado'));`;
+        
+        console.log('SQL FIX:', sqlFix);
+        alert('ERRO DE BANCO: O status "ideia apresentada" não é aceito pelo seu Supabase.\n\nSOLUÇÃO: No painel lateral, clique em "Configurações do Sistema" e execute o SQL de atualização no seu editor do Supabase.');
+      } else if (err.message?.includes('violates check constraint "deliveries_production_status_check"')) {
+        alert('ERRO DE BANCO: A tabela "deliveries" não aceita o status de produção "' + formData.production_status + '". \n\nPara corrigir, execute o script SQL de CONFIGURAÇÃO COMPLETA no Supabase.');
+      } else {
+        alert('Erro ao salvar entrega: ' + (err.message || 'Verifique sua conexão.'));
+      }
     }
   };
 
@@ -279,14 +292,19 @@ export function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     setFetchError(null);
+    setDeliveries([]); // Clear old deliveries while loading new ones
+    setClient(null); // Clear old client context while loading new one
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setCurrentUserId(user.id);
 
+      // Handle SQL generation safety
+      const sqlId = user.id;
+
       // 1. Fetch the logged-in user's profile to check role
-      console.log('Fetching profile for UID:', user.id);
-      const { data: currentUserProfile, error: profileError } = await supabase
+      let { data: currentUserProfile, error: profileError } = await supabase
         .from('clients')
         .select('*')
         .eq('id', user.id)
@@ -295,8 +313,31 @@ export function Dashboard() {
       if (profileError && profileError.code !== 'PGRST116') {
         console.error('Error fetching current user profile:', profileError);
         setFetchError(profileError);
-      } else {
-        console.log('Profile found:', currentUserProfile);
+      }
+
+      // Check for Master Admin by email if profile is missing
+      const adminEmails = ['AlexxBelmonte@gmail.com', 'noreply@monarcahub.com'];
+      const isMasterAdmin = adminEmails.includes(user.email || '');
+
+      // AUTO-PROVISIONING for master admin if profile missing
+      if (!currentUserProfile && isMasterAdmin) {
+        console.log('Master admin detected, auto-provisioning...');
+        const { data: newAdmin, error: adminErr } = await supabase
+          .from('clients')
+          .insert([{
+            id: user.id,
+            company_name: 'Admin Monarca',
+            total_deliveries_contracted: 99,
+            monthly_value: 0,
+            due_day: 10,
+            role: 'admin'
+          }])
+          .select()
+          .single();
+        
+        if (!adminErr && newAdmin) {
+          currentUserProfile = newAdmin;
+        }
       }
 
       setCurrentUser(currentUserProfile);
@@ -310,11 +351,8 @@ export function Dashboard() {
         }
       }
       
-      // AUTO-PROVISIONING: If user exists in Auth but not in Clients
+      // AUTO-PROVISIONING
       if (!currentUserProfile && user.id) {
-        console.log('User not found in clients table, attempting auto-provisioning...');
-        
-        // Try fallback to 'profiles' table if it exists
         const { data: profileFallback } = await supabase
           .from('profiles')
           .select('*')
@@ -339,41 +377,38 @@ export function Dashboard() {
           .single();
 
         if (!provisionError && newProfile) {
-          console.log('Auto-provisioned user in clients table');
           setCurrentUser(newProfile);
           setClient(newProfile);
-          // Re-trigger fetch to get all data now that we have a client record
           fetchData(); 
           return;
-        } else {
-          console.error('Failed to auto-provision user:', provisionError);
         }
       }
 
       const isAdminUser = currentUserProfile?.role === 'admin';
 
-      // 2. If admin, fetch all clients and staff for the selector
+      // 2. If staff, fetch all relevant data for selectors
       if (isAdminUser || currentUserProfile?.role === 'designer') {
-        const { data: clientsData } = await supabase
-          .from('clients')
-          .select('*')
-          .neq('role', 'designer')
-          .order('company_name', { ascending: true });
-        setAllClients(clientsData || []);
-
-        const { data: staffData } = await supabase
-          .from('clients')
-          .select('*')
-          .in('role', ['admin', 'designer'])
-          .order('company_name', { ascending: true });
-        setDesigners(staffData || []);
+        const [clientsRes, staffRes] = await Promise.all([
+          supabase.from('clients').select('*').neq('role', 'designer').order('company_name', { ascending: true }),
+          supabase.from('clients').select('*').in('role', ['admin', 'designer']).order('company_name', { ascending: true })
+        ]);
+        
+        setAllClients(clientsRes.data || []);
+        setDesigners(staffRes.data || []);
       }
 
-      // 3. Determine which client to fetch data for
-      // If admin has selected a client, use that. Otherwise use the logged-in user's ID.
-      const targetClientId = selectedClientId || (currentUserProfile?.role === 'designer' ? null : user.id);
+      // 3. Determine target client
+      // Designer fallback to null (general view)
+      // Admin fallback to null (needs selection)
+      // Standard user fallback to their own ID
+      let targetClientId = selectedClientId;
+      if (!targetClientId) {
+        if (currentUserProfile?.role === 'user') {
+          targetClientId = user.id;
+        }
+      }
 
-      // Fetch target client profile if we have a client ID
+      // Fetch target client profile
       if (targetClientId) {
         const { data: clientData, error: clientError } = await supabase
           .from('clients')
@@ -383,13 +418,13 @@ export function Dashboard() {
 
         if (clientError) {
           setFetchError(clientError);
-          console.error('Erro ao buscar perfil do cliente alvo:', clientError);
+          setClient(null);
+        } else {
+          setClient(clientData);
         }
-        setClient(clientData);
-      } else if (currentUserProfile?.role === 'designer') {
-        // For designers with no client selected, set their own profile as the "active client"
-        // to satisfy UI requirements while showing global data
-        setClient(currentUserProfile);
+      } else {
+        // No specific client selected (Designer "General View" or Admin "No Selection")
+        setClient(currentUserProfile?.role === 'designer' ? currentUserProfile : null);
       }
 
       // Fetch deliveries for current month
@@ -404,18 +439,24 @@ export function Dashboard() {
         .order('delivery_date', { ascending: true });
 
       if (currentUserProfile?.role === 'designer' && !selectedClientId) {
-        // Designer assigned tasks for all clients this month
         query = query.eq('assigned_to', user.id);
       } else if (targetClientId) {
         query = query.eq('client_id', targetClientId);
+      } else if (isAdminUser) {
+        // Admin viewing global? Or nothing?
+        // Let's hide deliveries if no client is selected for admin to avoid confusion
+        if (!selectedClientId) {
+          setDeliveries([]);
+          setInvoices([]);
+          return;
+        }
       }
 
       const { data: deliveryData, error: deliveryError } = await query;
-
       if (deliveryError) throw deliveryError;
       setDeliveries(deliveryData || []);
 
-      // Fetch invoices only if we have a specific client target
+      // Fetch invoices
       if (targetClientId) {
         const { data: invoiceData, error: invoiceError } = await supabase
           .from('invoices')
@@ -518,7 +559,7 @@ export function Dashboard() {
     }
   };
 
-  if (loading && !client) {
+  if (loading && !currentUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f5f5f5]">
         <div className="flex flex-col items-center gap-4">
@@ -529,30 +570,42 @@ export function Dashboard() {
     );
   }
 
-  if (!client) {
+  // If we have a user logged in but no profile in 'clients' table
+  if (!currentUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f5f5f5] p-4">
         <div className="max-w-2xl w-full bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Configuração Necessária</h2>
-          <p className="text-gray-600 mb-6">
-            Seu usuário foi autenticado, mas não encontramos um perfil de cliente vinculado ao seu ID no banco de dados.
+          <p className="text-gray-600 mb-6 font-medium">
+            Seu usuário foi autenticado, mas seu perfil de acesso não foi encontrado ou ainda não foi liberado.
           </p>
           
-          <div className="bg-blue-50 p-4 rounded-2xl mb-4 border border-blue-100">
-            <p className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-1">Seu ID Atual (UID):</p>
-            <div className="flex items-center gap-2">
-              <code className="text-sm text-blue-600 break-all font-mono bg-white/50 px-2 py-1 rounded block flex-1">
-                {currentUserId}
-              </code>
-              <button 
-                onClick={() => {
-                  navigator.clipboard.writeText(currentUserId || '');
-                  alert('ID copiado!');
-                }}
-                className="text-[10px] font-bold text-blue-700 hover:underline"
-              >
-                Copiar
-              </button>
+          <div className="bg-blue-50 p-6 rounded-2xl mb-6 border border-blue-100 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+              <UserCheck className="w-16 h-16 text-blue-900" />
+            </div>
+            <p className="text-[10px] font-bold text-blue-800 uppercase tracking-widest mb-2">Instruções para Liberação</p>
+            <p className="text-sm text-blue-900/80 mb-4 leading-relaxed">
+              O administrador do sistema precisa vincular seu ID de autenticação ao banco de dados Monarca.
+            </p>
+            <div className="flex flex-col gap-1">
+              <p className="text-[9px] font-bold text-blue-400 uppercase">Seu ID Único de Acesso:</p>
+              <div className="flex items-center gap-2">
+                <code className="text-sm text-blue-600 font-mono bg-white/80 px-3 py-2 rounded-xl block flex-1 border border-blue-200/50 shadow-inner">
+                  {currentUserId || 'Carregando ID...'}
+                </code>
+                <button 
+                  onClick={() => {
+                    if (currentUserId) {
+                      navigator.clipboard.writeText(currentUserId);
+                      alert('ID copiado!');
+                    }
+                  }}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-sm active:scale-95"
+                >
+                  Copiar
+                </button>
+              </div>
             </div>
           </div>
 
@@ -575,34 +628,96 @@ export function Dashboard() {
             </div>
           )}
 
-          <div className="bg-gray-50 p-6 rounded-2xl space-y-4 text-sm relative z-[60]">
-            <p className="font-semibold text-gray-700">Comando de Liberação (SQL):</p>
-            <p className="text-xs text-gray-500">
-              Seu perfil não foi encontrado. Escolha o comando abaixo de acordo com seu cargo e execute no Editor SQL do Supabase (isso também desativará restrições de acesso para esta tabela):
+          <div className="bg-gray-50 border-2 border-[#FF6321]/20 p-6 rounded-[32px] space-y-4 text-sm relative z-[60] shadow-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Database className="w-5 h-5 text-[#FF6321]" />
+              <p className="font-black text-gray-900 uppercase tracking-tight">Comando de Liberação (SQL):</p>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              <strong>IMPORTANTE:</strong> Para corrigir o erro de status e liberar seu acesso, copie o código abaixo e cole no seu <a href="https://supabase.com/dashboard/project/_/sql" target="_blank" className="text-[#FF6321] font-bold underline">SQL Editor do Supabase</a>. Depois clique em "Run".
             </p>
             
             <div className="space-y-3">
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Para Administrador:</p>
-                <pre className="bg-white p-3 rounded-lg text-[10px] border border-gray-200 overflow-x-auto text-gray-700 font-mono">
-                  {`-- Garante acesso e cargo admin
+              {currentUserId ? (
+                <>
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Para Administrador (Setup Completo):</p>
+                    <pre className="bg-gray-900 text-green-400 p-4 rounded-xl text-[10px] border border-gray-800 overflow-x-auto font-mono">
+{`-- SQL DE CONFIGURAÇÃO COMPLETA
+-- 1. Tabelas Base (Garante que existam)
+CREATE TABLE IF NOT EXISTS public.clients (
+    id UUID PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    total_deliveries_contracted INTEGER DEFAULT 10,
+    monthly_value DECIMAL DEFAULT 0,
+    due_day INTEGER DEFAULT 10,
+    role TEXT DEFAULT 'user'
+);
+
+CREATE TABLE IF NOT EXISTS public.deliveries (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    client_id UUID REFERENCES public.clients(id),
+    delivery_date DATE NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT DEFAULT 'ideia apresentada',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    delivery_link TEXT,
+    production_status TEXT DEFAULT 'ideacao',
+    assigned_to UUID,
+    briefing TEXT,
+    deadline DATE
+);
+
+-- 2. Correção de Constraints (Resolve o erro "violated by some row")
+-- Primeiro removemos as restrições problemáticas
+ALTER TABLE public.deliveries DROP CONSTRAINT IF EXISTS deliveries_status_check;
+ALTER TABLE public.deliveries DROP CONSTRAINT IF EXISTS deliveries_production_status_check;
+
+-- Agora limpamos qualquer dado incompatível que travaria a nova regra
+UPDATE public.deliveries 
+SET status = 'ideia apresentada' 
+WHERE status IS NULL OR status NOT IN ('ideia apresentada', 'arquivo entregue', 'aprovado', 'finalizado', 'recusado', 'ñ fez - atrasado', 'cancelado', 'em análise');
+
+UPDATE public.deliveries 
+SET production_status = 'ideacao' 
+WHERE production_status IS NULL OR production_status NOT IN ('ideacao', 'producao', 'revisao', 'finalizado', 'pausado');
+
+-- Adicionamos novamente as restrições com suporte aos novos status
+ALTER TABLE public.deliveries ADD CONSTRAINT deliveries_status_check 
+CHECK (status IN ('ideia apresentada', 'arquivo entregue', 'aprovado', 'finalizado', 'recusado', 'ñ fez - atrasado', 'cancelado', 'em análise'));
+
+ALTER TABLE public.deliveries ADD CONSTRAINT deliveries_production_status_check 
+CHECK (production_status IN ('ideacao', 'producao', 'revisao', 'finalizado', 'pausado'));
+
+-- 3. Liberação de Acesso (RLS)
 ALTER TABLE public.clients DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.deliveries DISABLE ROW LEVEL SECURITY;
+
+-- 4. Criar seu Perfil Admin
 INSERT INTO public.clients (id, company_name, total_deliveries_contracted, role) 
 VALUES ('${currentUserId}', 'Admin Monarca', 99, 'admin')
 ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
-                </pre>
-              </div>
-              
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Para Designer (Equipe):</p>
-                <pre className="bg-white p-3 rounded-lg text-[10px] border border-gray-200 overflow-x-auto text-gray-700 font-mono">
-                  {`-- Garante acesso e cargo designer
+                    </pre>
+                  </div>
+                  
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Para Designer (Equipe):</p>
+                    <pre className="bg-gray-900 text-blue-400 p-4 rounded-xl text-[10px] border border-gray-800 overflow-x-auto font-mono">
+{`-- SQL PARA DESIGNER
 ALTER TABLE public.clients DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.deliveries DISABLE ROW LEVEL SECURITY;
 INSERT INTO public.clients (id, company_name, total_deliveries_contracted, role) 
 VALUES ('${currentUserId}', 'Designer Equipe', 15, 'designer')
 ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
-                </pre>
-              </div>
+                    </pre>
+                  </div>
+                </>
+              ) : (
+                <div className="bg-white p-6 rounded-xl border border-gray-200 text-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-300 mx-auto mb-2" />
+                  <p className="text-xs text-gray-400">Identificando seu ID de acesso...</p>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-col gap-2 mt-8 relative z-[60]">
@@ -705,7 +820,11 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
                   onChange={(e) => setSelectedClientId(e.target.value || null)}
                   className="bg-transparent border-none text-xs font-bold text-app-foreground outline-none focus:ring-0 cursor-pointer pr-8"
                 >
-                  {currentUser?.role === 'designer' && <option value="">Minhas Demandas (Geral)</option>}
+                  {currentUser?.role === 'designer' ? (
+                    <option value="">Minhas Demandas (Geral)</option>
+                  ) : (
+                    <option value="">Selecione um Cliente...</option>
+                  )}
                   {allClients.map(c => (
                     <option key={c.id} value={c.id} className="bg-app-card text-app-foreground">
                       {c.company_name} {c.id === currentUserId ? '(Você)' : ''}
@@ -716,18 +835,16 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
             )}
             
               <nav className="hidden md:flex items-center gap-1 bg-gray-50 dark:bg-white/5 p-1 rounded-xl">
-                {currentUser?.role !== 'designer' && (
-                  <button 
-                    onClick={() => setActiveTab('calendar')}
-                    className={cn(
-                      "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                      activeTab === 'calendar' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                    )}
-                  >
-                    <LayoutDashboard className="w-4 h-4" />
-                    Calendário
-                  </button>
-                )}
+                <button 
+                  onClick={() => setActiveTab('calendar')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                    activeTab === 'calendar' ? "bg-white dark:bg-white/10 text-[#FF6321] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  )}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Calendário
+                </button>
                 {isActualStaff && (
                   <button 
                     onClick={() => setActiveTab('workflow')}
@@ -763,7 +880,7 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
             </button>
 
             <div className="text-right hidden sm:block">
-              <p className="text-xs font-bold text-app-foreground">{client.company_name}</p>
+              <p className="text-xs font-bold text-app-foreground">{client?.company_name || currentUser?.company_name || 'Agência'}</p>
               <p className="text-[10px] text-gray-400 uppercase tracking-wider">Gestão Ativa</p>
             </div>
             <div className="h-8 w-[1px] border-l border-app"></div>
@@ -779,7 +896,115 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
-        {activeTab === 'workflow' ? (
+        {activeTab === 'setup' ? (
+          <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-white dark:bg-white/5 p-8 md:p-12 rounded-[40px] border border-app shadow-sm">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 rounded-[24px] bg-indigo-500/10 flex items-center justify-center text-indigo-500">
+                  <Database className="w-8 h-8" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-black text-app-foreground">Setup do Sistema</h1>
+                  <p className="text-gray-500">Execute os comandos abaixo no SQL Editor do Supabase para corrigir erros de status e permissões.</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 p-6 rounded-3xl">
+                  <div className="flex gap-3">
+                    <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-800 dark:text-amber-400">Instruções Importantes</p>
+                      <ul className="text-xs text-amber-700/80 dark:text-amber-400/60 mt-2 space-y-1 list-disc ml-4">
+                        <li>Acesse o <a href="https://supabase.com/dashboard/project/_/sql" target="_blank" className="underline font-bold">SQL Editor do seu projeto Supabase</a>.</li>
+                        <li>Cole o código abaixo e clique em "Run".</li>
+                        <li>Isso corrigirá o erro de status <strong>"ideia apresentada"</strong> que você está enfrentando.</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative group">
+                  <pre className="bg-gray-900 text-green-400 p-8 rounded-[32px] font-mono text-[11px] overflow-x-auto border border-gray-800 shadow-2xl leading-relaxed">
+{`-- SQL DE CONFIGURAÇÃO COMPLETA (CORREÇÃO DE STATUS)
+-- 1. Tabelas Base
+CREATE TABLE IF NOT EXISTS public.clients (
+    id UUID PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    total_deliveries_contracted INTEGER DEFAULT 10,
+    monthly_value DECIMAL DEFAULT 0,
+    due_day INTEGER DEFAULT 10,
+    role TEXT DEFAULT 'user'
+);
+
+CREATE TABLE IF NOT EXISTS public.deliveries (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    client_id UUID REFERENCES public.clients(id),
+    delivery_date DATE NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT DEFAULT 'ideia apresentada',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    delivery_link TEXT,
+    production_status TEXT DEFAULT 'ideacao',
+    assigned_to UUID,
+    briefing TEXT,
+    deadline DATE
+);
+
+-- 2. CORREÇÃO DE CONSTRAINTS (Resolve o erro "violated by some row")
+-- Primeiro removemos as restrições para poder limpar os dados
+ALTER TABLE public.deliveries DROP CONSTRAINT IF EXISTS deliveries_status_check;
+ALTER TABLE public.deliveries DROP CONSTRAINT IF EXISTS deliveries_production_status_check;
+
+-- LIMPEZA: Forçamos todos os status que não estão na lista a voltarem para o padrão
+-- Isso evita o erro de "violated by some row"
+UPDATE public.deliveries 
+SET status = 'ideia apresentada' 
+WHERE status IS NULL OR status NOT IN ('ideia apresentada', 'arquivo entregue', 'aprovado', 'finalizado', 'recusado', 'ñ fez - atrasado', 'cancelado', 'em análise');
+
+UPDATE public.deliveries 
+SET production_status = 'ideacao' 
+WHERE production_status IS NULL OR production_status NOT IN ('ideacao', 'producao', 'revisao', 'finalizado', 'pausado');
+
+-- Agora que os dados estão limpos, aplicamos as novas travas com segurança
+ALTER TABLE public.deliveries ADD CONSTRAINT deliveries_status_check 
+CHECK (status IN ('ideia apresentada', 'arquivo entregue', 'aprovado', 'finalizado', 'recusado', 'ñ fez - atrasado', 'cancelado', 'em análise'));
+
+ALTER TABLE public.deliveries ADD CONSTRAINT deliveries_production_status_check 
+CHECK (production_status IN ('ideacao', 'producao', 'revisao', 'finalizado', 'pausado'));
+
+-- 3. Liberação de Acesso
+ALTER TABLE public.clients DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.deliveries DISABLE ROW LEVEL SECURITY;
+
+-- 4. Garantir Perfil Admin (Substitua se necessário)
+-- INSERT INTO public.clients (id, company_name, role) VALUES ('${currentUserId}', 'Admin Monarca', 'admin') ON CONFLICT (id) DO UPDATE SET role = 'admin';`}
+                  </pre>
+                  <button 
+                    onClick={() => {
+                      const text = document.querySelector('pre')?.innerText || '';
+                      navigator.clipboard.writeText(text);
+                      alert('SQL copiado! Agora cole no SQL Editor do Supabase.');
+                    }}
+                    className="absolute top-4 right-4 bg-white/10 hover:bg-[#FF6321] text-white px-4 py-2 rounded-xl text-xs font-bold transition-all backdrop-blur-md border border-white/10"
+                  >
+                    Copiar Código
+                  </button>
+                </div>
+
+                <div className="flex justify-center pt-4">
+                  <button 
+                    onClick={() => setActiveTab('calendar')}
+                    className="flex items-center gap-2 text-gray-400 hover:text-[#FF6321] font-bold text-sm transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Voltar ao Calendário
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'workflow' ? (
           <div className="space-y-8">
                 {currentUser?.role === 'designer' && (
                   <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-8">
@@ -787,7 +1012,7 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
                     <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                       <div>
                         <h1 className="text-3xl font-extrabold text-app-foreground mb-2">
-                          Olá, {currentUser.company_name}
+                          Olá, {currentUser?.company_name || 'Designer'}
                         </h1>
                         <p className="text-gray-500 dark:text-gray-400">
                           {selectedClientId ? `Visualizando fluxo para: ${client?.company_name}` : 'Acompanhe aqui o fluxo de produção e suas demandas atribuídas.'}
@@ -817,127 +1042,188 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
           </div>
         ) : activeTab === 'calendar' ? (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-            <div ref={calendarRef} className={cn("space-y-8 pb-4", exporting && "p-8 rounded-3xl")}>
-              {/* Welcome Section */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-              <div>
-                <h1 className="text-3xl font-extrabold text-app-foreground mb-2">
-                  {isActualAdmin ? 'Painel de Gestão' : `Olá, ${client.company_name}`}
-                </h1>
-                <p className="text-gray-500 dark:text-gray-400">
-                  {isActualAdmin 
-                    ? `Gerenciando: ${client.company_name}` 
-                    : 'Acompanhe aqui o andamento das suas entregas e o calendário editorial.'}
-                </p>
-              </div>
+            {client ? (
+              <div ref={calendarRef} className={cn("space-y-8 pb-4", exporting && "p-8 rounded-3xl")}>
+                {/* Welcome Section */}
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                  <div>
+                    <h1 className="text-3xl font-extrabold text-app-foreground mb-2">
+                      {isActualAdmin ? 'Painel de Gestão' : `Olá, ${client?.company_name}`}
+                    </h1>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      {isActualAdmin 
+                        ? `Gerenciando: ${client?.company_name}` 
+                        : 'Acompanhe aqui o andamento das suas entregas e o calendário editorial.'}
+                    </p>
+                  </div>
 
-              {isActualAdmin && (
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => setIsAddingClient(true)}
-                    className="bg-white dark:bg-white/10 text-gray-900 dark:text-white px-4 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-white/20 transition-all border border-app shadow-sm"
-                  >
-                    <Plus className="w-5 h-5 text-[#FF6321]" />
-                    Novo Cliente
-                  </button>
-                  <button 
-                    onClick={() => setIsAdding(true)}
-                    className="bg-gray-900 dark:bg-[#FF6321] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-[#e5591e] transition-all shadow-lg shadow-gray-900/10"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Nova Entrega
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Review Block */}
-            {!isActualAdmin && <ReviewBlock />}
-
-            {/* Metrics */}
-            <Metrics 
-              deliveries={deliveries} 
-              totalContracted={client.total_deliveries_contracted || 0} 
-            />
-
-            {/* Calendar Section */}
-            <div className="flex flex-col gap-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-[#FF6321]" />
-                  <h2 className="text-xl font-bold text-app-foreground">Calendário Editorial</h2>
-                </div>
-                
-                <div className="flex items-center gap-4 bg-app-card px-4 py-2 rounded-2xl border border-app shadow-sm">
-                  <button 
-                    onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg transition-colors"
-                  >
-                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                  </button>
-                  <span className="text-sm font-bold text-app-foreground min-w-[120px] text-center capitalize">
-                    {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
-                  </span>
-                  <button 
-                    onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg transition-colors"
-                  >
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
-                  </button>
-                </div>
-              </div>
-
-              <DeliveryTable 
-                deliveries={deliveries} 
-                onApprove={handleApprove} 
-                isAdmin={isActualAdmin}
-                onEdit={(d) => setIsEditing(d)}
-                onReorder={handleReorder}
-              />
-            </div>
-          </div>
-
-          {isActualAdmin && (
-              <button 
-                onClick={handleExportPDF}
-                disabled={exporting}
-                className="w-full py-5 bg-white dark:bg-white/5 border-2 border-app hover:border-[#FF6321] text-gray-600 dark:text-gray-300 hover:text-[#FF6321] font-black rounded-[32px] transition-all flex items-center justify-center gap-3 group shadow-sm active:scale-[0.98] disabled:opacity-50"
-              >
-                {exporting ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  <>
-                    <Download className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
-                    <span className="uppercase tracking-widest text-xs">Gerar Relatório em PDF</span>
-                    <div className="h-4 w-[1px] bg-gray-200 dark:bg-white/10 mx-2" />
-                    <Printer className="w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity" />
-                  </>
-                )}
-              </button>
-            )}
-
-            {/* Feedback Section */}
-              {deliveries.length > 0 && (
-                <div className="bg-app-card p-8 rounded-3xl border border-app shadow-sm transition-colors">
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-[#FF6321]/10 flex items-center justify-center">
-                      <Sparkles className="w-6 h-6 text-[#FF6321]" />
+                  {isActualAdmin && (
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setIsAddingClient(true)}
+                        className="bg-white dark:bg-white/10 text-gray-900 dark:text-white px-4 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-white/20 transition-all border border-app shadow-sm"
+                      >
+                        <Plus className="w-5 h-5 text-[#FF6321]" />
+                        Novo Cliente
+                      </button>
+                      <button 
+                        onClick={() => setIsAdding(true)}
+                        className="bg-gray-900 dark:bg-[#FF6321] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-[#e5591e] transition-all shadow-lg shadow-gray-900/10"
+                      >
+                        <Plus className="w-5 h-5" />
+                        Nova Entrega
+                      </button>
                     </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-app-foreground">Feedback do Calendário</h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">O que achou das ideias deste mês? Peça ajustes ao nosso Estrategista IA.</p>
+                  )}
+                </div>
+
+                {/* Review Block */}
+                {!isActualAdmin && <ReviewBlock />}
+
+                {/* Metrics */}
+                <Metrics 
+                  deliveries={deliveries} 
+                  totalContracted={client?.total_deliveries_contracted || 0} 
+                />
+
+                {/* Calendar Section */}
+                <div className="flex flex-col gap-6">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-[#FF6321]" />
+                      <h2 className="text-xl font-bold text-app-foreground">Calendário Editorial</h2>
+                    </div>
+                    
+                    <div className="flex items-center gap-4 w-full sm:w-auto">
+                      {/* View Toggle */}
+                      <div className="flex p-1 bg-gray-100 dark:bg-white/5 rounded-xl border border-app">
+                        <button 
+                          onClick={() => setCalendarViewMode('list')}
+                          className={cn(
+                            "p-2 rounded-lg transition-all",
+                            calendarViewMode === 'list' ? "bg-white dark:bg-[#FF6321] text-[#FF6321] dark:text-white shadow-sm" : "text-gray-400 hover:text-gray-600"
+                          )}
+                        >
+                          <ClipboardList className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => setCalendarViewMode('grid')}
+                          className={cn(
+                            "p-2 rounded-lg transition-all",
+                            calendarViewMode === 'grid' ? "bg-white dark:bg-[#FF6321] text-[#FF6321] dark:text-white shadow-sm" : "text-gray-400 hover:text-gray-600"
+                          )}
+                        >
+                          <Grid className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex-1 sm:flex-none flex items-center justify-between gap-4 bg-app-card px-4 py-2 rounded-2xl border border-app shadow-sm">
+                        <button 
+                          onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg transition-colors"
+                        >
+                          <ChevronLeft className="w-5 h-5 text-gray-400" />
+                        </button>
+                        <span className="text-sm font-bold text-app-foreground min-w-[120px] text-center capitalize">
+                          {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
+                        </span>
+                        <button 
+                          onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg transition-colors"
+                        >
+                          <ChevronRight className="w-5 h-5 text-gray-400" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => setIsChatOpen(true)}
-                    className="w-full py-4 bg-gray-50 dark:bg-white/5 border border-dashed border-gray-200 dark:border-white/10 rounded-2xl text-gray-500 dark:text-gray-400 font-medium hover:border-[#FF6321] hover:text-[#FF6321] transition-all flex items-center justify-center gap-2 group"
-                  >
-                    <MessageSquare className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                    Enviar feedback ou pedir alterações
-                  </button>
+
+                  {calendarViewMode === 'grid' ? (
+                    <CalendarGrid 
+                      deliveries={deliveries}
+                      currentMonth={currentMonth}
+                      isAdmin={isActualAdmin}
+                      onEdit={(d) => setIsEditing(d)}
+                    />
+                  ) : (
+                    <DeliveryTable 
+                      deliveries={deliveries} 
+                      onApprove={handleApprove} 
+                      isAdmin={isActualAdmin}
+                      onEdit={(d) => setIsEditing(d)}
+                      onReorder={handleReorder}
+                    />
+                  )}
                 </div>
-              )}
-            </div>
+
+                {isActualAdmin && (
+                  <button 
+                    onClick={handleExportPDF}
+                    disabled={exporting}
+                    className="w-full py-5 bg-white dark:bg-white/5 border-2 border-app hover:border-[#FF6321] text-gray-600 dark:text-gray-300 hover:text-[#FF6321] font-black rounded-[32px] transition-all flex items-center justify-center gap-3 group shadow-sm active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {exporting ? (
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    ) : (
+                      <>
+                        <Download className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
+                        <span className="uppercase tracking-widest text-xs">Gerar Relatório em PDF</span>
+                        <div className="h-4 w-[1px] bg-gray-200 dark:bg-white/10 mx-2" />
+                        <Printer className="w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {/* Feedback Section */}
+                {deliveries.length > 0 && (
+                  <div className="bg-app-card p-8 rounded-3xl border border-app shadow-sm transition-colors">
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="w-12 h-12 rounded-2xl bg-[#FF6321]/10 flex items-center justify-center">
+                        <Sparkles className="w-6 h-6 text-[#FF6321]" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-app-foreground">Feedback do Calendário</h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">O que achou das ideias deste mês? Peça ajustes ao nosso Estrategista IA.</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setIsChatOpen(true)}
+                      className="w-full py-4 bg-gray-50 dark:bg-white/5 border border-dashed border-gray-200 dark:border-white/10 rounded-2xl text-gray-500 dark:text-gray-400 font-medium hover:border-[#FF6321] hover:text-[#FF6321] transition-all flex items-center justify-center gap-2 group"
+                    >
+                      <MessageSquare className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                      Enviar feedback ou pedir alterações
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-20 text-center animate-in fade-in zoom-in-95 duration-500">
+                <div className="w-24 h-24 rounded-[40px] bg-gray-50 dark:bg-white/5 border-2 border-app flex items-center justify-center mb-8 relative">
+                  <LayoutDashboard className="w-10 h-10 text-gray-300" />
+                  <div className="absolute -top-1 -right-1 w-6 h-6 bg-[#FF6321] rounded-full flex items-center justify-center shadow-lg shadow-[#FF6321]/20">
+                    <Sparkles className="w-3 h-3 text-white" />
+                  </div>
+                </div>
+                <h3 className="text-2xl font-bold text-app-foreground mb-3">Bem-vindo, Administrador</h3>
+                <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto mb-8">
+                  Selecione um cliente no menu superior para visualizar e gerenciar o calendário editorial.
+                </p>
+                {allClients.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-xl mx-auto">
+                    {allClients.slice(0, 6).map(c => (
+                      <button 
+                        key={c.id}
+                        onClick={() => setSelectedClientId(c.id)}
+                        className="p-4 bg-app-card border border-app rounded-2xl hover:border-[#FF6321] hover:shadow-md transition-all text-xs font-bold text-app-foreground truncate"
+                      >
+                        {c.company_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         ) : (
           <Account 
             client={client} 
@@ -990,18 +1276,16 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
             </div>
 
             <nav className="space-y-2">
-              {currentUser?.role !== 'designer' && (
-                <button 
-                  onClick={() => { setActiveTab('calendar'); setIsMobileMenuOpen(false); }}
-                  className={cn(
-                    "w-full px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3",
-                    activeTab === 'calendar' ? "bg-[#FF6321]/10 text-[#FF6321]" : "text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5"
-                  )}
-                >
-                  <LayoutDashboard className="w-5 h-5" />
-                  Calendário Editorial
-                </button>
-              )}
+              <button 
+                onClick={() => { setActiveTab('calendar'); setIsMobileMenuOpen(false); }}
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3",
+                  activeTab === 'calendar' ? "bg-[#FF6321]/10 text-[#FF6321]" : "text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5"
+                )}
+              >
+                <LayoutDashboard className="w-5 h-5" />
+                Calendário Editorial
+              </button>
               {isActualStaff && (
                 <button 
                   onClick={() => { setActiveTab('workflow'); setIsMobileMenuOpen(false); }}
@@ -1014,7 +1298,7 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
                   Fluxo de Produção
                 </button>
               )}
-              <button 
+               <button 
                 onClick={() => { setActiveTab('account'); setIsMobileMenuOpen(false); }}
                 className={cn(
                   "w-full px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3",
@@ -1027,15 +1311,17 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
             </nav>
 
             <div className="absolute bottom-6 left-6 right-6 pt-6 border-t border-app">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-full bg-[#FF6321]/10 flex items-center justify-center text-[#FF6321] font-bold">
-                  {client.company_name.charAt(0)}
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-full bg-[#FF6321]/10 flex items-center justify-center text-[#FF6321] font-bold">
+                    {client?.company_name?.charAt(0) || currentUser?.company_name?.charAt(0) || 'A'}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-app-foreground">{client?.company_name || currentUser?.company_name || 'Agência'}</p>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">
+                      {client ? 'Cliente Ativo' : 'Seu Perfil'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-app-foreground">{client.company_name}</p>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider">Cliente Ativo</p>
-                </div>
-              </div>
               <button 
                 onClick={handleLogout}
                 className="w-full py-3 bg-red-500/10 text-red-500 rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-red-500/20 transition-all"
@@ -1050,18 +1336,16 @@ ON CONFLICT (id) DO UPDATE SET role = 'designer';`}
 
       {/* Mobile Bottom Navigation */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-app-card border-t border-app z-[55] px-6 py-3 flex items-center justify-around shadow-[0_-4px_20px_rgba(0,0,0,0.1)] transition-colors duration-300">
-        {currentUser?.role !== 'designer' && (
-          <button 
-            onClick={() => setActiveTab('calendar')}
-            className={cn(
-              "flex flex-col items-center gap-1 transition-all",
-              activeTab === 'calendar' ? "text-[#FF6321]" : "text-gray-400"
-            )}
-          >
-            <LayoutDashboard className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Calendário</span>
-          </button>
-        )}
+        <button 
+          onClick={() => setActiveTab('calendar')}
+          className={cn(
+            "flex flex-col items-center gap-1 transition-all",
+            activeTab === 'calendar' ? "text-[#FF6321]" : "text-gray-400"
+          )}
+        >
+          <LayoutDashboard className="w-6 h-6" />
+          <span className="text-[10px] font-bold uppercase tracking-wider">Calendário</span>
+        </button>
         {isActualStaff && (
           <button 
             onClick={() => setActiveTab('workflow')}
