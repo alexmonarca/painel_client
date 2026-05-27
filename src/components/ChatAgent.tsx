@@ -4,6 +4,8 @@ import { Send, Bot, User, Loader2, Sparkles, X, Calendar } from 'lucide-react';
 import { Client, Delivery } from '../types';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface Message {
   role: 'user' | 'model';
@@ -15,10 +17,11 @@ interface ChatAgentProps {
   deliveries: Delivery[];
   isOpen: boolean;
   onClose: () => void;
-  onUpdate?: () => void;
+  onUpdate?: (dateToFocus?: string) => void;
+  currentMonth?: Date;
 }
 
-export function ChatAgent({ client, deliveries, isOpen, onClose, onUpdate }: ChatAgentProps) {
+export function ChatAgent({ client, deliveries, isOpen, onClose, onUpdate, currentMonth }: ChatAgentProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -76,7 +79,14 @@ export function ChatAgent({ client, deliveries, isOpen, onClose, onUpdate }: Cha
     await saveMessage('user', userMessage);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY || '',
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
       
       const deliveriesContext = deliveries.map(d => 
         `- ID: ${d.id}, Data: ${d.delivery_date}, Descrição: ${d.description}, Status: ${d.status}`
@@ -118,25 +128,28 @@ CLIENTE: ${client.company_name}
 ESPECIALIDADE/ESCOPO: ${client.budget_details.description || 'Marketing Digital e Social Media'}
 PLANO ATUAL: ${client.budget_details.plan || 'Premium'}
 
-CALENDÁRIO ATUAL (CONTEXTO):
-${deliveriesContext || 'Nenhuma entrega registrada ainda.'}
+MÊS ATUALMENTE SELECIONADO NA TELA DO USUÁRIO: ${currentMonth ? format(currentMonth, 'MMMM yyyy', { locale: ptBR }) : format(new Date(), 'MMMM yyyy', { locale: ptBR })}
+(Atenção: se o usuário pedir para criar ideias para um mês diferente como "junho 2026", "julho 2026", ou qualquer data específica, preencha as datas de acordo com o solicitado pelo usuário e NÃO se limite ao mês atualmente exibido!)
+
+CALENDÁRIO EXIBIDO (CONTEXTO DO MÊS SELECIONADO):
+${deliveriesContext || 'Nenhuma entrega registrada ainda para este período.'}
 
 SUA MISSÃO E COMPORTAMENTO:
 1. Se o cliente pedir para criar um calendário, sugerir ideias para datas específicas ou "preencher" o mês, você deve OBRIGATORIAMENTE usar a ferramenta 'create_delivery' para cada ideia proposta.
 2. Não apenas diga que vai fazer; EXECUTE a criação no calendário usando as ferramentas.
 3. Se o cliente sugerir uma alteração em algo que já existe, use 'update_delivery'.
-4. Quando criar ideias, tente distribuí-las de forma estratégica ao longo do mês, respeitando a frequência do plano do cliente.
+4. Quando criar ideias, tente distribuí-las de forma estratégica ao longo do mês solicitado pelo usuário, respeitando a frequência do plano do cliente.
 5. Analise o feedback do cliente e proponha ganchos de vendas (copywriting) e formatos que convertam (Reels, Carrossel, Stories).
 6. Mantenha as respostas curtas, impactantes e focadas em autoridade de marca.
 7. Use emojis profissionais. 🚀🎯🔥
 
 REGRAS CRÍTICAS:
-- Se houver silêncio sobre datas, sugira datas próximas à data atual (${new Date().toLocaleDateString('pt-BR')}).
+- Se houver silêncio ou ambiguidade sobre qual mês preencher, sugira datas próximas à data atual ou do mês configurado.
 - Sempre confirme para o cliente que as ideias foram inseridas no calendário oficial dele após usar a ferramenta.
 - NUNCA diga para o cliente "inserir manualmente". Você é quem faz isso por ele via ferramentas.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.5-flash",
         contents: [
           ...messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })),
           { role: 'user', parts: [{ text: userMessage }] }
@@ -150,6 +163,7 @@ REGRAS CRÍTICAS:
 
       const functionCalls = response.functionCalls;
       const initialAiText = response.text || "";
+      let dateToFocus: string | undefined = undefined;
 
       if (functionCalls) {
         const toolResponses = [];
@@ -163,10 +177,14 @@ REGRAS CRÍTICAS:
                 .eq('id', id);
               
               if (error) throw error;
+              if (updates.delivery_date) {
+                dateToFocus = updates.delivery_date;
+              }
               toolResponses.push({
                 functionResponse: {
                   name: call.name,
-                  response: { status: "success", message: "Entrega atualizada com sucesso." }
+                  response: { status: "success", message: "Entrega atualizada com sucesso." },
+                  id: call.id
                 }
               });
             } else if (call.name === 'create_delivery') {
@@ -176,10 +194,14 @@ REGRAS CRÍTICAS:
                 .insert([{ ...args, client_id: client.id, status: 'ideia apresentada' }]);
               
               if (error) throw error;
+              if (args.delivery_date) {
+                dateToFocus = args.delivery_date;
+              }
               toolResponses.push({
                 functionResponse: {
                   name: call.name,
-                  response: { status: "success", message: "Nova entrega criada com sucesso." }
+                  response: { status: "success", message: "Nova entrega criada com sucesso." },
+                  id: call.id
                 }
               });
             }
@@ -187,13 +209,14 @@ REGRAS CRÍTICAS:
             toolResponses.push({
               functionResponse: {
                 name: call.name,
-                response: { status: "error", message: err instanceof Error ? err.message : String(err) }
+                response: { status: "error", message: err instanceof Error ? err.message : String(err) },
+                id: call.id
               }
             });
           }
         }
 
-        if (onUpdate) onUpdate();
+        if (onUpdate) onUpdate(dateToFocus);
 
         // If the AI sent initial text with the tools, add it first
         if (initialAiText.trim()) {
@@ -203,7 +226,7 @@ REGRAS CRÍTICAS:
 
         // After tool execution, get a final response from the model
         const followUpResponse = await ai.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-3.5-flash",
           contents: [
             ...messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })),
             { role: 'user', parts: [{ text: userMessage }] },

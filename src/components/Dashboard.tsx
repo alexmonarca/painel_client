@@ -1261,7 +1261,16 @@ ALTER TABLE public.deliveries DISABLE ROW LEVEL SECURITY;
           deliveries={deliveries}
           isOpen={isChatOpen} 
           onClose={() => setIsChatOpen(false)} 
-          onUpdate={fetchData}
+          onUpdate={(dateToFocus) => {
+            if (dateToFocus) {
+              const dateObj = new Date(dateToFocus + 'T12:00:00');
+              if (!isNaN(dateObj.getTime())) {
+                setCurrentMonth(dateObj);
+              }
+            }
+            fetchData();
+          }}
+          currentMonth={currentMonth}
         />
       )}
 
