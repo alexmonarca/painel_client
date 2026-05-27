@@ -114,60 +114,42 @@ export function Dashboard() {
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
   const calendarRef = useRef<HTMLDivElement>(null);
+  const pdfTemplateRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [calendarViewMode, setCalendarViewMode] = useState<'list' | 'grid'>('grid');
 
   const handleExportPDF = async () => {
-    if (!calendarRef.current) return;
+    if (!pdfTemplateRef.current) return;
     setExporting(true);
     
     try {
       // Small delay to ensure any layout shifts settle if needed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 150));
 
-      const canvas = await domToCanvas(calendarRef.current, {
-        scale: 2, // Better quality
-        backgroundColor: isDarkMode ? '#0a0a0a' : '#f5f5f5',
+      const canvas = await domToCanvas(pdfTemplateRef.current, {
+        scale: 2.5, // Outstanding crisp quality for tables and small fonts
+        backgroundColor: '#ffffff',
       });
 
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 15;
-      const contentWidth = pageWidth - (margin * 2);
+      const imgWidth = pdf.internal.pageSize.getWidth();
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-      // Add Styled Export Header
-      const headerHeight = 45;
-      pdf.setFillColor(isDarkMode ? 13 : 250, isDarkMode ? 14 : 250, isDarkMode ? 18 : 250);
-      pdf.rect(0, 0, pageWidth, headerHeight, 'F');
-      
-      // Title Section
-      pdf.setTextColor(isDarkMode ? 255 : 26, isDarkMode ? 255 : 26, isDarkMode ? 255 : 26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(22);
-      pdf.text('Relatório de Calendário Editorial', margin, 18);
-      
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(16);
-      pdf.text(`Cliente: ${client?.company_name}`, margin, 28);
-      
-      // Export Metadata
-      pdf.setFontSize(11);
-      pdf.setTextColor(120, 120, 120);
-      const exportDate = format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-      pdf.text(`Data de Exportação: ${exportDate}`, margin, 38);
+      let heightLeft = imgHeight;
+      let position = 0;
 
-      // Subtle Divider
-      pdf.setDrawColor(isDarkMode ? 40 : 230, isDarkMode ? 40 : 230, isDarkMode ? 40 : 230);
-      pdf.line(margin, 42, pageWidth - margin, 42);
+      // Slice pages beautifully if the table overflows a single screen height
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
 
-      // Add the content image
-      const imgProps = pdf.getImageProperties(imgData);
-      const imgHeight = (imgProps.height * contentWidth) / imgProps.width;
-      
-      // If content is very long, it might overflow the first page. 
-      // For dashboard reports, we'll place it on the first page started from below header.
-      pdf.addImage(imgData, 'PNG', margin, headerHeight + 5, contentWidth, imgHeight);
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
       
       const fileName = `Relatorio_Editorial_${client?.company_name || 'Agencia'}_${format(currentMonth, 'MMMM_yyyy', { locale: ptBR })}.pdf`;
       pdf.save(fileName);
@@ -455,6 +437,31 @@ CHECK (status IN ('ideia apresentada', 'arquivo entregue', 'aprovado', 'finaliza
       const { data: deliveryData, error: deliveryError } = await query;
       if (deliveryError) throw deliveryError;
       setDeliveries(deliveryData || []);
+
+      // AUTO-DELAY LOGIC: Check for overdue approved deliveries
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const overdueDeliveries = (deliveryData || []).filter(d => 
+        d.status === 'aprovado' && 
+        d.delivery_date < todayStr
+      );
+
+      if (overdueDeliveries.length > 0) {
+        const idsToUpdate = overdueDeliveries.map(d => d.id);
+        const { error: updateErr } = await supabase
+          .from('deliveries')
+          .update({ status: 'ñ fez - atrasado' })
+          .in('id', idsToUpdate);
+        
+        if (!updateErr) {
+          // Sync local deliveryData for immediate display
+          deliveryData?.forEach(d => {
+            if (idsToUpdate.includes(d.id)) {
+              d.status = 'ñ fez - atrasado' as DeliveryStatus;
+            }
+          });
+          console.log(`Auto-updated ${idsToUpdate.length} overdue deliveries to 'atrasado'.`);
+        }
+      }
 
       // Fetch invoices
       if (targetClientId) {
@@ -1693,6 +1700,166 @@ ALTER TABLE public.deliveries DISABLE ROW LEVEL SECURITY;
           </div>
         </div>
       )}
+
+      {/* EXCLUSIVE COMPACT PDF TEMPLATE (Hidden off-screen, calibrated for standard A4 Portrait) */}
+      <div 
+        ref={pdfTemplateRef}
+        className="absolute top-0 left-[-9999px] bg-white text-slate-900 w-[794px] p-8 font-sans flex flex-col justify-between"
+        style={{ colorScheme: 'light' }}
+      >
+        <div>
+          {/* Header */}
+          <div className="flex justify-between items-start border-b-2 border-[#FF6321] pb-6 mb-6">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#FF6321]" />
+                <h1 className="text-xl font-black uppercase tracking-wider text-slate-900">
+                  Agência Monarca
+                </h1>
+              </div>
+              <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold">Relatório Editorial & Cronograma</p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] uppercase font-black tracking-widest text-[#FF6321] bg-[#FF6321]/10 px-3 py-1 rounded-full">
+                {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
+              </span>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Exportado: {format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+              </p>
+            </div>
+          </div>
+
+          {/* Metadata & Quick Metrics Dashboard */}
+          <div className="grid grid-cols-2 gap-6 bg-slate-50 p-5 rounded-2xl mb-6 border border-slate-100">
+            <div className="space-y-2 flex flex-col justify-center">
+              <div className="text-xs text-slate-600">
+                <span className="text-slate-400 font-medium font-mono uppercase text-[9px]">Cliente:</span>{' '}
+                <strong className="text-slate-800 text-sm font-bold block">{client?.company_name || 'Geral'}</strong>
+              </div>
+              <div className="text-xs text-slate-600">
+                <span className="text-slate-400 font-medium font-mono uppercase text-[9px]">Contrato Ativo:</span>{' '}
+                <strong className="text-slate-700 font-bold block">
+                  {client?.total_deliveries_contracted || 0} posts contratados
+                </strong>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-white p-2 rounded-xl border border-slate-200/60 shadow-sm flex flex-col justify-center">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Planejados</span>
+                <strong className="text-sm font-black text-slate-800">{deliveries.length}</strong>
+              </div>
+              <div className="bg-white p-2 rounded-xl border border-slate-200/60 shadow-sm flex flex-col justify-center">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Aprovados</span>
+                <strong className="text-sm font-black text-emerald-600">
+                  {deliveries.filter(d => d.status === 'aprovado' || d.status === 'finalizado').length}
+                </strong>
+              </div>
+              <div className="bg-white p-2 rounded-xl border border-slate-200/60 shadow-sm flex flex-col justify-center">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Em Prod</span>
+                <strong className="text-sm font-black text-indigo-600">
+                  {deliveries.filter(d => d.production_status === 'producao' || d.production_status === 'revisao').length}
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Table */}
+          <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-100/80 text-slate-800 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
+                  <th className="py-2.5 px-4 w-[90px]">Data</th>
+                  <th className="py-2.5 px-4">Planejamento do Post / Briefing</th>
+                  <th className="py-2.5 px-4 w-[110px] text-center">Fase de Prod</th>
+                  <th className="py-2.5 px-4 w-[120px] text-center">Status Final</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {deliveries.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-slate-400 font-medium">
+                      Nenhum post agendado para este período.
+                    </td>
+                  </tr>
+                ) : (
+                  deliveries
+                    .slice()
+                    .sort((a, b) => a.delivery_date.localeCompare(b.delivery_date))
+                    .map((d, idx) => {
+                      const dateObj = new Date(d.delivery_date + 'T12:00:00');
+                      const formattedDay = format(dateObj, "dd'/'MM", { locale: ptBR });
+                      const formattedWeekday = format(dateObj, "EEE", { locale: ptBR }).replace('.', '');
+
+                      // Status badge styling matching exact standard layout
+                      let statusStyle = "bg-orange-50 text-orange-700 border border-orange-200/50";
+                      if (d.status === 'aprovado' || d.status === 'finalizado') {
+                        statusStyle = "bg-emerald-50 text-emerald-700 border border-emerald-200/50";
+                      } else if (d.status === 'arquivo entregue') {
+                        statusStyle = "bg-blue-50 text-blue-700 border border-blue-200/50";
+                      } else if (d.status === 'ñ fez - atrasado' || d.status === 'recusado') {
+                        statusStyle = "bg-rose-50 text-rose-700 border border-rose-200/50";
+                      }
+
+                      // Production status labeling
+                      let prodLabel = "Ideação";
+                      let prodStyle = "bg-slate-100/80 text-slate-600 border border-slate-200/30";
+                      if (d.production_status === 'producao') {
+                        prodLabel = "Criação";
+                        prodStyle = "bg-indigo-50 text-indigo-600 border border-indigo-100/40";
+                      } else if (d.production_status === 'revisao') {
+                        prodLabel = "Revisão";
+                        prodStyle = "bg-amber-50 text-amber-700 border border-amber-150";
+                      } else if (d.production_status === 'finalizado') {
+                        prodLabel = "Finalizado";
+                        prodStyle = "bg-emerald-50 text-emerald-700 border border-emerald-100";
+                      }
+
+                      return (
+                        <tr key={d.id || idx} className="hover:bg-slate-50/30">
+                          <td className="py-2 px-4 font-mono font-bold text-slate-700">
+                            <div className="text-slate-900">{formattedDay}</div>
+                            <div className="text-[9px] uppercase tracking-wide text-slate-400 font-sans font-normal">
+                              {formattedWeekday}
+                            </div>
+                          </td>
+                          <td className="py-2 px-4 space-y-0.5 max-w-[320px]">
+                            <div className="font-bold text-slate-800 leading-tight">{d.description}</div>
+                            {d.briefing && (
+                              <p className="text-[10px] text-slate-500 leading-tight line-clamp-2 italic">
+                                "{d.briefing}"
+                              </p>
+                            )}
+                          </td>
+                          <td className="py-2 px-4 text-center">
+                            <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${prodStyle}`}>
+                              {prodLabel}
+                            </span>
+                          </td>
+                          <td className="py-2 px-4 text-center">
+                            <span className={`inline-block text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg ${statusStyle}`}>
+                              {d.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Document Footer */}
+        <div className="border-t border-slate-100 pt-5 mt-10 flex justify-between items-center text-[9px] text-slate-400">
+          <div>
+            <span>Este cronograma é regulado pela Plataforma de Gestão Monarca.</span>
+          </div>
+          <div className="font-mono">
+            <span>monarca.cc • Relatório Editorial</span>
+          </div>
+        </div>
+      </div>
+
       <Footer />
     </div>
   );
