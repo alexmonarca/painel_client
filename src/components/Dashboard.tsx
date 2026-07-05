@@ -511,6 +511,23 @@ CHECK (status IN ('ideia apresentada', 'arquivo entregue', 'aprovado', 'finaliza
     }
   };
 
+  const handleStatusChange = async (id: string, newStatus: DeliveryStatus) => {
+    try {
+      const { error } = await supabase
+        .from('deliveries')
+        .update({ status: newStatus })
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      // Refresh data
+      setDeliveries(prev => prev.map(d => d.id === id ? { ...d, status: newStatus } : d));
+    } catch (err) {
+      console.error('Error updating status:', err);
+      alert('Erro ao atualizar status. Tente novamente.');
+    }
+  };
+
   const handleReorder = async (activeId: string, overId: string) => {
     const activeDelivery = deliveries.find(d => d.id === activeId);
     const overDelivery = deliveries.find(d => d.id === overId);
@@ -1158,6 +1175,7 @@ ALTER TABLE public.deliveries DISABLE ROW LEVEL SECURITY;
                       isAdmin={isActualAdmin}
                       onEdit={(d) => setIsEditing(d)}
                       onReorder={handleReorder}
+                      onStatusChange={handleStatusChange}
                     />
                   )}
                 </div>

@@ -28,6 +28,7 @@ interface DeliveryTableProps {
   isAdmin?: boolean;
   onEdit?: (delivery: Delivery) => void;
   onReorder?: (activeId: string, overId: string) => void;
+  onStatusChange?: (id: string, newStatus: DeliveryStatus) => void;
 }
 
 const statusConfig: Record<DeliveryStatus, { label: string; color: string; icon: any }> = {
@@ -37,6 +38,8 @@ const statusConfig: Record<DeliveryStatus, { label: string; color: string; icon:
   finalizado: { label: 'Finalizado', color: 'bg-gray-50 text-gray-600 border-gray-100 dark:bg-white/5 dark:text-gray-400 dark:border-white/10', icon: CheckCircle },
   recusado: { label: 'Recusado', color: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/30', icon: XCircle },
   'ñ fez - atrasado': { label: 'Atrasado', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/30', icon: AlertCircle },
+  'cancelado': { label: 'Cancelado', color: 'bg-zinc-50 text-zinc-600 border-zinc-100 dark:bg-zinc-950/20 dark:text-zinc-400 dark:border-zinc-800/30', icon: XCircle },
+  'em análise': { label: 'Em Análise', color: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800/30', icon: Clock },
 };
 
 const productionStatusConfig: Record<string, { label: string; color: string }> = {
@@ -51,9 +54,10 @@ interface SortableRowProps {
   isAdmin?: boolean;
   onApprove: (id: string) => void;
   onEdit?: (delivery: Delivery) => void;
+  onStatusChange?: (id: string, newStatus: DeliveryStatus) => void;
 }
 
-const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove, onEdit }) => {
+const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove, onEdit, onStatusChange }) => {
   const {
     attributes,
     listeners,
@@ -62,6 +66,21 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
     transition,
     isDragging,
   } = useSortable({ id: delivery.id, disabled: !isAdmin });
+
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -110,17 +129,65 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
       </td>
       <td className="px-6 py-5 align-top w-48">
         <div className="flex flex-col gap-2">
-          <div className={cn(
-            "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border",
-            config.color
-          )}>
-            <StatusIcon className="w-3.5 h-3.5" />
-            {config.label}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              type="button"
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:scale-105 active:scale-95 cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-[#FF6321]/40 shadow-sm",
+                config.color
+              )}
+              title="Clique para alterar o status"
+            >
+              <StatusIcon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{config.label}</span>
+              <span className="text-[8px] opacity-60 ml-0.5 shrink-0">▼</span>
+            </button>
+            
+            {isDropdownOpen && (
+              <div className="absolute left-0 mt-1 w-52 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-750 shadow-2xl z-50 overflow-hidden py-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-700/50">
+                  <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Alterar Status</span>
+                </div>
+                <div className="max-h-60 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-700/30">
+                  {Object.entries(statusConfig).map(([statusKey, statusVal]) => {
+                    const isSelected = delivery.status === statusKey;
+                    return (
+                      <button
+                        key={statusKey}
+                        type="button"
+                        onClick={() => {
+                          onStatusChange?.(delivery.id, statusKey as DeliveryStatus);
+                          setIsDropdownOpen(false);
+                        }}
+                        className={cn(
+                          "w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors font-semibold",
+                          isSelected ? "text-[#FF6321] bg-[#FF6321]/5 dark:bg-[#FF6321]/10" : "text-gray-700 dark:text-gray-300"
+                        )}
+                      >
+                        <span className={cn(
+                          "w-2 h-2 rounded-full shrink-0",
+                          statusKey === 'ideia apresentada' && "bg-blue-500",
+                          statusKey === 'arquivo entregue' && "bg-indigo-500",
+                          statusKey === 'aprovado' && "bg-green-500",
+                          statusKey === 'finalizado' && "bg-gray-500",
+                          statusKey === 'recusado' && "bg-red-500",
+                          statusKey === 'ñ fez - atrasado' && "bg-orange-500",
+                          statusKey === 'cancelado' && "bg-zinc-500",
+                          statusKey === 'em análise' && "bg-amber-500"
+                        )} />
+                        <span className="truncate">{statusVal.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {isAdmin && delivery.production_status && delivery.production_status !== 'ideacao' && (
             <div className={cn(
-              "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest",
+              "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest self-start",
               productionStatusConfig[delivery.production_status]?.color || 'text-gray-400 bg-gray-400/10'
             )}>
               {productionStatusConfig[delivery.production_status]?.label || delivery.production_status}
@@ -162,7 +229,7 @@ const SortableRow: React.FC<SortableRowProps> = ({ delivery, isAdmin, onApprove,
   );
 }
 
-export function DeliveryTable({ deliveries, onApprove, isAdmin, onEdit, onReorder }: DeliveryTableProps) {
+export function DeliveryTable({ deliveries, onApprove, isAdmin, onEdit, onReorder, onStatusChange }: DeliveryTableProps) {
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -214,6 +281,7 @@ export function DeliveryTable({ deliveries, onApprove, isAdmin, onEdit, onReorde
                       isAdmin={isAdmin}
                       onApprove={onApprove}
                       onEdit={onEdit}
+                      onStatusChange={onStatusChange}
                     />
                   ))}
                 </SortableContext>
