@@ -22,7 +22,7 @@ import {
   arrayMove
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, subMonths, addMonths, isSameMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
   Clock, 
@@ -37,8 +37,10 @@ import {
   UserPlus,
   AlertCircle,
   ChevronRight,
+  ChevronLeft,
   XCircle,
-  Layout
+  Layout,
+  Filter
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -64,6 +66,16 @@ export function Workflow({ currentUserId, userRole, clientId }: WorkflowProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeTask, setActiveTask] = useState<Delivery | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
+  const [filterMode, setFilterMode] = useState<'month' | 'all'>('month');
+
+  const filteredTasks = tasks.filter(task => {
+    if (filterMode === 'all') return true;
+    if (!task.delivery_date) return false;
+    const taskMonthStr = task.delivery_date.substring(0, 7);
+    const selectedMonthStr = format(selectedMonth, 'yyyy-MM');
+    return taskMonthStr === selectedMonthStr;
+  });
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -246,10 +258,84 @@ export function Workflow({ currentUserId, userRole, clientId }: WorkflowProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-app-card p-5 rounded-3xl border border-app shadow-sm">
         <div>
-          <h2 className="text-2xl font-bold text-app-foreground text-app font-sans">Fluxo de Produção</h2>
-          <p className="text-sm text-gray-400 font-sans">Acompanhe e gerencie as demandas de criação.</p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl md:text-2xl font-bold text-app-foreground font-sans">Fluxo de Produção</h2>
+            {!clientId && userRole === 'designer' && (
+              <span className="text-[10px] bg-[#FF6321]/10 text-[#FF6321] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-[#FF6321]/20">
+                Minhas Demandas (Geral)
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 font-sans mt-1">
+            {filterMode === 'month' 
+              ? `Demandas de ${format(selectedMonth, 'MMMM yyyy', { locale: ptBR })} (${filteredTasks.length} de ${tasks.length} total)`
+              : `Exibindo todas as demandas registradas (${tasks.length} total)`}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          {/* Quick filter tabs */}
+          <div className="flex p-1 bg-gray-100 dark:bg-white/5 rounded-2xl border border-app shadow-sm">
+            <button
+              type="button"
+              onClick={() => {
+                setFilterMode('month');
+                setSelectedMonth(new Date());
+              }}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                filterMode === 'month' && isSameMonth(selectedMonth, new Date())
+                  ? "bg-[#FF6321] text-white shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+              )}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+              Mês Atual
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('all')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                filterMode === 'all'
+                  ? "bg-[#FF6321] text-white shadow-sm"
+                  : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+              )}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              Todas as Demandas
+            </button>
+          </div>
+
+          {/* Month Navigator */}
+          {filterMode === 'month' && (
+            <div className="flex items-center gap-2 bg-gray-50 dark:bg-white/5 px-3 py-1.5 rounded-2xl border border-app shadow-sm">
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(prev => subMonths(prev, 1))}
+                className="p-1 hover:bg-gray-200 dark:hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-app-foreground cursor-pointer"
+                title="Mês Anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <span className="text-xs font-bold text-app-foreground capitalize min-w-[100px] text-center">
+                {format(selectedMonth, 'MMMM yyyy', { locale: ptBR })}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(prev => addMonths(prev, 1))}
+                className="p-1 hover:bg-gray-200 dark:hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-app-foreground cursor-pointer"
+                title="Próximo Mês"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -262,7 +348,7 @@ export function Workflow({ currentUserId, userRole, clientId }: WorkflowProps) {
           onDragEnd={handleDragEnd}
         >
           {COLUMNS.map(column => {
-            const columnTasks = tasks.filter(t => (t.production_status || 'ideacao') === column.id);
+            const columnTasks = filteredTasks.filter(t => (t.production_status || 'ideacao') === column.id);
             return (
               <div key={column.id} className="flex flex-col gap-4 h-full">
                 <div className={cn(
